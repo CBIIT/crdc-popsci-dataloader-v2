@@ -15,15 +15,21 @@ from bento.common.utils import get_host, DATETIME_FORMAT, reformat_date
 
 from neo4j import Driver
 import pandas as pd
-import yaml
 import numpy as np
 from datetime import date
+
+from cancer_translation_func import get_cancer_translations, get_cancer_translations_list, convert_codes
 
 from icdc_schema import ICDC_Schema, is_parent_pointer, get_list_values
 from bento.common.utils import get_logger, NODES_CREATED, RELATIONSHIP_CREATED, UUID, \
     RELATIONSHIP_TYPE, MULTIPLIER, ONE_TO_ONE, UPSERT_MODE, \
     NEW_MODE, DELETE_MODE, NODES_DELETED, RELATIONSHIP_DELETED, combined_dict_counters, \
     MISSING_PARENT, get_string_md5  # DEFAULT_MULTIPLIER,  NODE_LOADED   #these libraries are not used
+
+import s3fs
+#import aiobotocore
+#profile_session = aiobotocore.session.AioSession(profile='Popsci_Dev')
+#s3_reader = s3fs.S3FileSystem(session=profile_session)
 
 NODE_TYPE = 'type'
 PROP_TYPE = 'Type'
@@ -153,6 +159,7 @@ class DataLoader:
         self.schema = schema
         self.db_name = database_name
         self.rel_prop_delimiter = self.schema.rel_prop_delimiter
+        self.wipe_timer = 0
 
         if plugins:
             for plugin in plugins:
@@ -179,41 +186,11 @@ class DataLoader:
         self.nodes_deleted_stat = {}
         self.relationships_deleted_stat = {}
 
+        # if no icd-O codes in file then convertsion file will be empty and not read this part
         if 'location' in conversion_files:
-            self.schema.location_codes = self.get_cancer_translations(conversion_files["location"])
+            self.schema.location_codes = get_cancer_translations_list(conversion_files["location"])
         if 'histology' in conversion_files:
-            self.schema.histology_codes = self.get_cancer_translations_hist(conversion_files["histology"])
-        # print("x")
-
-    def get_cancer_translations(self, yml_file):
-        with open(yml_file) as f:
-            cancer_term_file = yaml.load(f, Loader=yaml.FullLoader)
-
-        all_terms = pd.DataFrame()
-        for curr_key in cancer_term_file.keys():
-            for curr_location in cancer_term_file[curr_key]:
-                x = pd.DataFrame.from_dict(cancer_term_file[curr_key][curr_location])  # , orient='index')
-                x["ICD-O-3 Code"] = curr_location
-                x.reset_index(inplace=True)
-
-                all_terms = pd.concat([all_terms, x])
-
-        # all_terms.columns = ["Sub Site", "ICD-O-3 Code", "Primary Site"]
-        return all_terms
-
-    def get_cancer_translations_hist(self, yml_file):
-        with open(yml_file) as f:
-            cancer_term_file = yaml.load(f, Loader=yaml.FullLoader)
-
-        all_terms = pd.DataFrame()
-        for curr_key in cancer_term_file.keys():
-            x = pd.DataFrame.from_dict(cancer_term_file[curr_key], orient='index')
-            #  x["Primary Site"] = None
-            x.reset_index(inplace=True)
-            all_terms = pd.concat([all_terms, x])
-
-        all_terms.columns = ["ICD-O-3 Code", "VM Long Name"]
-        return all_terms
+            self.schema.histology_codes = get_cancer_translations(conversion_files["histology"])
 
     def get_schema_data(self, tx, query):
         result = tx.run(query)
@@ -221,7 +198,6 @@ class DataLoader:
         return data_list
 
     def get_data(self, tx, query, obj_data, batch_size):
-        # query = "CALL apoc.periodic.iterate( " + query + """ {batchSize: """ + str(batch_size) + """, parallel:true})"""
         result = tx.run(query, batch=obj_data)
         return result.data()
 
@@ -251,9 +227,11 @@ class DataLoader:
 
         self.log.info(' ')
         end = timer()
+        self.create_dict_timer = end - start
         self.log.info('{0} Index Dictionary ({2}) nodes) took: {1:.2f} seconds'.format(create_type, end - start, file_size))
 
     def update_indexs_with_new(self):
+        dict_timer = timer()
         today = date.today()
         for curr_node in self.node_keys_dict:
             new_nodes = """MATCH (n:curr_node) where date(n.created) = """
@@ -264,6 +242,7 @@ class DataLoader:
                 records = session.execute_read(self.get_schema_data, new_nodes)
             x = pd.concat([self.node_keys_dict[curr_node]['Node_Index_DF'], pd.DataFrame(records)])
             self.node_keys_dict[curr_node]['Node_Index_DF'] = x.drop_duplicates()
+        self.update_dict_timer = timer() - dict_timer
 
     def check_files(self, file_list):
         if not file_list:
@@ -296,11 +275,11 @@ class DataLoader:
 
     def load(self, file_list, cheat_mode, dry_run, loading_mode, wipe_db, max_violations,
              split=False, no_backup=True, backup_folder="/", neo4j_uri=None):
-        if not self.check_files(file_list):
-            return False
+        # if not self.check_files(file_list):
+        #    return False
         start = timer()
-        if not self.validate_files(cheat_mode, file_list, max_violations):
-            return False
+        # if not self.validate_files(cheat_mode, file_list, max_violations):
+        #    return False
         if not no_backup and not dry_run:
             if not neo4j_uri:
                 self.log.error('No Neo4j URI specified for backup, abort loading!')
@@ -400,13 +379,29 @@ class DataLoader:
         self.log.info(' ')
         processed_files = []
         load_start_time = time.perf_counter()
+
+        # todo: read file list at this point
+        file_dict = {}
         for txt in file_list:
+            if txt[:2] == "s3":  # files get loaded directly from S3
+                file_data = pd.read_csv(txt, sep='\t', header=0, storage_options={"profile": 'Popsci_Dev'})
+            else:  # files are loaded from local
+                file_data = pd.read_csv(txt, sep='\t', header=0)
+
+            file_type = list(set(file_data["type"]))[0]
+            if file_type not in file_dict.keys():
+                file_dict[file_type] = file_data
+            else:
+                file_dict[file_type] = pd.concat([file_data, file_dict[file_type]])
+
+        for txt in file_dict:
             if loading_mode != DELETE_MODE:
-                new_nodes, updated_nodes, all_obj_list = self.load_nodes(session, tx, txt, loading_mode, wipe_db, split)
+                new_nodes, updated_nodes, all_obj_list = self.load_nodes(session, tx, txt, file_dict, loading_mode, wipe_db, split)
                 processed_files.append(all_obj_list)
 
+        self.load_node_time = time.perf_counter()-load_start_time
         self.log.info(f"Number of Nodes Created / Updated: {self.load_passed}, Nodes Failed: {self.load_failed}")
-        self.log.info(f"Total Loading time for all nodes: {time.perf_counter()-load_start_time:.4f} seconds")
+        self.log.info(f"Total Loading time for all nodes: {self.load_node_time:.2f} seconds")
 
         self.log.info(' ')
         self.log.info('updating schema dictionary  for new nodes created')
@@ -440,8 +435,11 @@ class DataLoader:
                     batch_index += 1
 #                    print(f"Total Elapsed time for relationships: {time.perf_counter()-batch_time:.4f} seconds")
 
-        self.log.info(f"Total Number of Relationships Created / Updated: {self.relationship_passed}, Nodes Failed: {self.relationship_failed}")
-        self.log.info(f"Total time to make all relationships {time.perf_counter()-rel_start_time:.4f} seconds")
+        self.log.info(f"Total Number of Relationships Created / Updated: {self.relationship_passed}, " +
+                      f"Nodes Failed: {self.relationship_failed}")
+
+        self.load_relation_time = time.perf_counter()-rel_start_time
+        self.log.info(f"Total time to make all relationships {self.load_relation_time:.2f} seconds")
 
     # Remove extra spaces at beginning and end of the keys and values
     @staticmethod
@@ -824,8 +822,8 @@ class DataLoader:
             new_qry += """ \"Match(n:MyNode) where """ + f"{ID_FUNC}(n) " + """ = item.Node_ID and n.Primary_Key_Value = item.Primary_Key_Value """
             new_qry += """  SET n.updated = datetime()  return n \", """
 
-        new_qry += """{batchSize: 5000, retries: 1, """   # Process 1000 items per batch
-        new_qry += """parallel: false, """    # Run batches sequentially
+        new_qry += """{batchSize: 10000, retries: 1, """   # Process 1000 items per batch
+        new_qry += """parallel: true, """    # Run batches sequentially
         # new_qry += """iterateList: true, """ # process all batches at once
         new_qry += """params: { data: $data } } )"""
 
@@ -849,7 +847,7 @@ class DataLoader:
         new_qry += """\"UNWIND $data AS batch return batch\", """  # Iterate statement: Unwinds the list of data items
         new_qry += """ \"old_qry \", """
 
-        new_qry += """{batchSize: 5000, """   # Process 1000 items per batch
+        new_qry += """{batchSize: 10000, """   # Process 1000 items per batch
         new_qry += """parallel: true, """     # Run batches sequentially
         new_qry += """iterateList: true, """  # process all batches at once
         new_qry += """params: { data: $data } } )"""   # Pass the data list as a parameter
@@ -879,23 +877,7 @@ class DataLoader:
             self.load_passed += qry_result["operations"]["committed"]
             self.load_failed += qry_result["operations"]['failed']
 
-    def convert_codes(self, df, column_name, code_list):
-        if column_name in df.columns:
-            df = df.merge(code_list, left_on=column_name, right_on="ICD-O-3 Code", how="left")
-
-            df.drop(column_name, axis=1, inplace=True)
-            # df.rename(columns={"Sub Site": column_name, "ICD-O-3 Code": "ICD-O-3 Code" + column_name.replace("cancer_diagnosis", "")}, inplace=True)
-            df.rename(columns={"ICD-O-3 Code": "ICD-O-3 Code" + column_name.replace("cancer_diagnosis", "")}, inplace=True)
-            df.rename(columns={"VM Long Name": column_name, "UBERON Preferred Term": column_name}, inplace=True)
-            if 'index' in df.columns:
-                df.drop("index", axis=1, inplace=True)
-
-            x = df.query("participant_case_indicator == 'No'")
-            df.loc[x.index, column_name] = "N/A"
-            df.loc[x.index, "ICD-O-3 Code" + column_name.replace("cancer_diagnosis", "")] = "N/A"
-        return df
-
-    def load_nodes(self, session, tx, file_name, loading_mode,  wipe_db, split=False):
+    def load_nodes(self, session, tx, file_name, file_dict, loading_mode,  wipe_db, split=False):
         if loading_mode == NEW_MODE:
             action_word = 'Loading new'
         elif loading_mode == UPSERT_MODE:
@@ -907,7 +889,8 @@ class DataLoader:
         self.log.info(' ')
         self.log.info('{} nodes from file: {}'.format(action_word, file_name))
 
-        file_data = pd.read_csv(file_name, sep='\t', header=0)
+        # file_data = pd.read_csv(file_name, sep='\t', header=0)
+        file_data = file_dict[file_name]
         for col in file_data:
             if file_data[col].dtype in ['int64', 'float64']:
                 file_data[col] = file_data[col].fillna(np.nan)
@@ -916,8 +899,11 @@ class DataLoader:
             else:
                 file_data[col] = file_data[col].fillna("missing data")
 
-        file_data = self.convert_codes(file_data, 'cancer_diagnosis_primary_site', self.schema.location_codes)
-        file_data = self.convert_codes(file_data, 'cancer_diagnosis_disease_morphology', self.schema.histology_codes)
+        # terms would only exist if conversion files are present, else will ignore
+        if 'location_codes' in dir(self.schema):
+            file_data = convert_codes(file_data, 'cancer_diagnosis_primary_site', self.schema.location_codes)
+        if 'histology_codes' in dir(self.schema):
+            file_data = convert_codes(file_data, 'cancer_diagnosis_disease_morphology', self.schema.histology_codes)
 
         # load nodes in batches of 5,000
         nodes_done = 0
@@ -972,7 +958,7 @@ class DataLoader:
             nodes_done += len(data_to_work)
             batches += 1
             end_time = time.time()
-            self.log.info(f"Completed batch {batches}, total nodes done: {nodes_done} in {end_time - batch_time: .4f} seconds")
+            self.log.info(f"Completed batch {batches}, total nodes done: {nodes_done} in {end_time - batch_time: .2f} seconds")
         return all_new_nodes, all_existing_nodes, all_obj
 
     def node_exists(self, session, label, prop, value):
@@ -1146,7 +1132,7 @@ class DataLoader:
 
                     end_time = time.time()
                     self.log.info(f"Completed batch {batch_index}, Relationships Created: {rel_created}, " +
-                                  f"Relationships Failed: {len(file_data) - rel_created} in {end_time - batch_time: .4f} seconds")
+                                  f"Relationships Failed: {len(file_data) - rel_created} in {end_time - batch_time: .2f} seconds")
 
                     self.relationship_passed += rel_created
                     self.relationship_failed += len(file_data) - rel_created
@@ -1178,6 +1164,8 @@ class DataLoader:
         return data_list[0]
 
     def wipe_db(self, session, split=False):
+        wipe_timer = time.perf_counter()
+        self.log.info('In process of wipping Database...')
         failed_nodes = 1
         deleted_nodes = 0
         while failed_nodes > 0:
@@ -1187,8 +1175,8 @@ class DataLoader:
             failed_nodes = qry_result["operations"]['failed']
 
         self.log.info(" ")
-        self.log.info('In process of wipping Database...')
-        self.log.info(f'{deleted_nodes} nodes deleted...')
+        self.wipe_timer = time.perf_counter() - wipe_timer
+        self.log.info(f'{deleted_nodes} nodes deleted in {self.wipe_timer:.2f}')
 
     def wipe_db_split(self, session):
         while True:
@@ -1239,9 +1227,9 @@ class DataLoader:
         if index_tuple not in existing:
             #`CREATE INDEX ON :Label(property)` is deprecated
             #command = "CREATE INDEX ON :{}({});".format(node_name, node_property)
-            
+
             command = "CREATE INDEX IF NOT EXISTS FOR (n:{0}) ON (n.{1})".format(node_name, node_property)
-            
+
             session.run(command)
             self.indexes_created += 1
             self.log.info("Index created for \"{}\" on property \"{}\"".format(node_name, node_property))

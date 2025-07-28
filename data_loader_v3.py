@@ -27,9 +27,9 @@ from bento.common.utils import get_logger, NODES_CREATED, RELATIONSHIP_CREATED, 
     MISSING_PARENT, get_string_md5  # DEFAULT_MULTIPLIER,  NODE_LOADED   #these libraries are not used
 
 import s3fs
-#import aiobotocore
-#profile_session = aiobotocore.session.AioSession(profile='Popsci_Dev')
-#s3_reader = s3fs.S3FileSystem(session=profile_session)
+# import aiobotocore
+# profile_session = aiobotocore.session.AioSession(profile='Popsci_Dev')
+# s3_reader = s3fs.S3FileSystem(session=profile_session)
 
 NODE_TYPE = 'type'
 PROP_TYPE = 'Type'
@@ -380,14 +380,18 @@ class DataLoader:
         processed_files = []
         load_start_time = time.perf_counter()
 
-        # todo: read file list at this point
         file_dict = {}
         for txt in file_list:
             if txt[:2] == "s3":  # files get loaded directly from S3
-                file_data = pd.read_csv(txt, sep='\t', header=0, storage_options={"profile": 'Popsci_Dev'})
+                file_data = pd.read_csv(txt, sep='\t', header=0, encoding='windows-1252', storage_options={"profile": 'Popsci_Dev'})
             else:  # files are loaded from local
-                file_data = pd.read_csv(txt, sep='\t', header=0)
+                file_data = pd.read_csv(txt, sep='\t', header=0, encoding='windows-1252')
 
+            file_data.columns = [i.strip() for i in file_data.columns]
+            try:
+                file_data = file_data.query("type == type")  # remove blank lines in file
+            except Exception as e:
+                print(e)
             file_type = list(set(file_data["type"]))[0]
             if file_type not in file_dict.keys():
                 file_dict[file_type] = file_data
@@ -913,7 +917,12 @@ class DataLoader:
         batches = 0
 
         # remove duplicate records by primay ID (This value should be unique)
-        file_data = file_data.drop_duplicates(self.schema.get_id_field(file_data.iloc[0].to_dict()))
+        try:
+            key_name = self.schema.get_id_field(file_data.iloc[0].to_dict())
+            file_data = file_data.drop_duplicates(key_name)
+            file_data = file_data.query(f"{key_name} != 'missing data'")
+        except Exception as e:
+            print(e)
 
         while nodes_done < len(file_data):
             batch_size = 5000

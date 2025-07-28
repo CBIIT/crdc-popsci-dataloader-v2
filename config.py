@@ -3,6 +3,7 @@ import yaml
 
 from bento.common.utils import get_logger
 
+
 class PluginConfig:
     def __init__(self, config):
         self.module_name = config['module']
@@ -43,8 +44,12 @@ class BentoConfig:
             self.dataset = None
             self.no_parents = None
             self.split_transactions = None
-            self.database_name  = 'neo4j'
+            self.data_source = None
+            self.manifest_bucket = None
+            self.manifest_name = None
+            self.database_name = 'neo4j'
             self.convert_files = []
+            self.neo4j_file_summmary = ""
 
         else:
             print(config_file)
@@ -107,6 +112,10 @@ class BentoConfig:
                     self.split_transactions = config.get('split_transactions')
                     self.database_name = config.get('database_name')
                     self.convert_files = config.get("convert_files")
+                    self.data_source = config.get("data_source")
+                    self.manifest_bucket = config.get("manifest_bucket")
+                    self.manifest_name = config.get("manifest_name")
+                    self.neo4j_file_summmary = config.get("neo4j_file_summmary")
             else:
                 msg = f'Can NOT open configuration file "{config_file}"!'
                 self.log.error(msg)

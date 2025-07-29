@@ -11,18 +11,21 @@ from neo4j.exceptions import AuthError
 from icdc_schema import ICDC_Schema
 from props import Props
 from bento.common.utils import LOG_PREFIX, APP_NAME,  UPSERT_MODE, NEW_MODE, DELETE_MODE
-from bento.common.utils import get_logger, removeTrailingSlash, check_schema_files, print_config, get_log_file, load_plugin
+from bento.common.utils import get_logger, removeTrailingSlash, check_schema_files
+from bento.common.utils import print_config, get_log_file, load_plugin
 import time
 
 from config import BentoConfig
 from data_loader_v3 import DataLoader   # udpated to use new version of data loader
-from bento.common.s3 import S3Bucket
+from bento.common.s3_v2 import S3Bucket
 
 
 if LOG_PREFIX not in os.environ:
     os.environ[LOG_PREFIX] = 'Data_Loader'
 
 os.environ[APP_NAME] = 'Data_Loader'
+
+S3_PROFILE = 'Popsci_Dev'
 
 
 def parse_arguments():
@@ -122,28 +125,41 @@ def process_arguments(args, log):
         log.error('Backup folder not specified! A backup folder is required unless the --no-backup argument is used')
         sys.exit(1)
 
+    if not config.convert_files:
+        config.convert_files = []
+
+    if not config.neo4j_file_summmary:
+        config.neo4j_file_summmary = ""
+
     if args.s3_folder:
         config.s3_folder = args.s3_folder
-    if config.s3_folder:
+    if config.s3_folder and config.data_source.lower() == 's3':
         if not os.path.exists(config.dataset):
             os.makedirs(config.dataset)
         else:
             exist_files = glob.glob('{}/*.txt'.format(config.dataset))
             if len(exist_files) > 0:
-                log.error('Folder: "{}" is not empty, please empty it first'.format(config.dataset))
-                sys.exit(1)
+                import shutil
+                shutil.rmtree(config.dataset)  # delete folder and all contents
+                os.makedirs(config.dataset)    # recreate the folder
+
+                # log.error('Folder: "{}" is not empty, please empty it first'.format(config.dataset))
+                # sys.exit(1)
 
         if args.bucket:
             config.s3_bucket = args.bucket
         if not config.s3_bucket:
             log.error('Please specify S3 bucket name with -b/--bucket argument!')
             sys.exit(1)
-        bucket = S3Bucket(config.s3_bucket)
+        bucket = S3Bucket(config.s3_bucket, S3_PROFILE)
         if not os.path.isdir(config.dataset):
             log.error('{} is not a directory!'.format(config.dataset))
             sys.exit(1)
         log.info(f'Loading data from s3://{config.s3_bucket}/{config.s3_folder}')
         if not bucket.download_files_in_folder(config.s3_folder, config.dataset):
+            # s3_file_path = f"s3://{self.bucket_name}/{key}"
+            # df = pd.read_csv(s3_file_path)
+
             log.error('Download files from S3 bucket "{}" failed!'.format(config.s3_bucket))
             sys.exit(1)
 
@@ -187,7 +203,7 @@ def process_arguments(args, log):
 
 def upload_log_file(bucket_name, folder, file_path):
     base_name = os.path.basename(file_path)
-    s3 = S3Bucket(bucket_name)
+    s3 = S3Bucket(bucket_name, S3_PROFILE)
     key = f'{folder}/{base_name}'
     return s3.upload_file(key, file_path)
 
@@ -218,7 +234,9 @@ def main():
     try:
         txt_files = glob.glob('{}/*.txt'.format(config.dataset))
         tsv_files = glob.glob('{}/*.tsv'.format(config.dataset))
-        file_list = txt_files + tsv_files
+        txt_files_lvl2 = glob.glob('{}/*/*.txt'.format(config.dataset))
+        tsv_files_lvl2 = glob.glob('{}/*/*.tsv'.format(config.dataset))
+        file_list = txt_files + tsv_files + txt_files_lvl2 + tsv_files_lvl2
 
         if file_list:
             if config.wipe_db and not config.yes:
@@ -248,9 +266,10 @@ def main():
                     plugins.append(prepare_plugin(plugin_config, schema))
             loader = DataLoader(driver, schema, config.database_name, config.convert_files, plugins)
 
-            load_result = loader.load(file_list, config.cheat_mode, config.dry_run, config.loading_mode, config.wipe_db,
-                                      config.max_violations, split=config.split_transactions,
-                                      no_backup=config.no_backup, neo4j_uri=config.neo4j_uri, backup_folder=config.backup_folder)
+            load_result = loader.load(file_list, config.cheat_mode, config.dry_run, config.loading_mode,
+                                      config.wipe_db, config.max_violations, split=config.split_transactions,
+                                      no_backup=config.no_backup, neo4j_uri=config.neo4j_uri,
+                                      backup_folder=config.backup_folder)
             if driver:
                 driver.close()
             if restore_cmd:
@@ -277,9 +296,19 @@ def main():
             log.info(restore_cmd)
 
         # added print statments to show total duration program took tor
-        print("")
-        print("driver has been closed")
-        print(f"Total time from start of load function to completion {time.perf_counter() - overall_start:.4f} seconds")
+        log.info("")
+        log.info("driver has been closed")
+        log.info("")
+        log.info("Total time from start of load function to completion  " +
+                 f"{time.perf_counter() - overall_start:.4f} seconds")
+        log.info("")
+        log.info("Summary: ")
+        log.info(f"Time to wipe old database: {loader.wipe_timer:.2f} seconds")
+        log.info(f"Time to create dictionary for existing nodes: {loader.create_dict_timer:.2f} seconds")
+        log.info(f"Nodes Created / Updated: {loader.load_passed:,d} in {loader.load_node_time:.2f} seconds")
+        log.info(f"Time to update dictionary for new nodes: {loader.update_dict_timer:.2f} seconds")
+        log.info(f"Relationships Created / Updated: {loader.relationship_passed:,d} in " +
+                 f"{loader.load_relation_time:.2f} seconds")
 
     if config.s3_bucket and config.s3_folder:
         result = upload_log_file(config.s3_bucket, f'{config.s3_folder}/logs', log_file)

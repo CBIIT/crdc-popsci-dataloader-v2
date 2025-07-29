@@ -22,8 +22,8 @@ from bento.common.s3_v2 import S3Bucket
 
 if LOG_PREFIX not in os.environ:
     os.environ[LOG_PREFIX] = 'Data_Loader'
-
 os.environ[APP_NAME] = 'Data_Loader'
+
 S3_PROFILE = 'Popsci_Dev'
 
 
@@ -337,7 +337,7 @@ def main():
             log.info(f"Relationships Created / Updated: {loader.relationship_passed:,d} in " +
                      f"{loader.load_relation_time:.2f} seconds")
 
-    if config.s3_bucket and config.s3_folder:
+    if config.s3_bucket and config.s3_folder and config.data_source == 'S3':
         result = upload_log_file(config.s3_bucket, f'{config.s3_folder}/logs', log_file)
         if result:
             log.info(f'Uploading log file {log_file} succeeded!')

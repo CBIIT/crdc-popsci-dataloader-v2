@@ -26,7 +26,6 @@ from bento.common.utils import get_logger, NODES_CREATED, RELATIONSHIP_CREATED, 
     NEW_MODE, DELETE_MODE, NODES_DELETED, RELATIONSHIP_DELETED, combined_dict_counters, \
     MISSING_PARENT, get_string_md5  # DEFAULT_MULTIPLIER,  NODE_LOADED   #these libraries are not used
 
-import s3fs
 # import aiobotocore
 # profile_session = aiobotocore.session.AioSession(profile='Popsci_Dev')
 # s3_reader = s3fs.S3FileSystem(session=profile_session)
@@ -365,6 +364,14 @@ class DataLoader:
     def _load_all(self, session, tx, file_list, loading_mode, split, wipe_db):
         if wipe_db:
             self.wipe_db(session)   # deletes all node in db
+            try:
+                tx2 = session.begin_transaction()
+                self.create_indexes(tx2)
+                tx.commit()
+            except Exception as e:
+                tx2.rollback()
+                self.log.exception(e)
+                return False
 
         self.load_passed = 0
         self.load_failed = 0
@@ -1172,9 +1179,19 @@ class DataLoader:
         data_list = [i for i in result.data()]
         return data_list[0]
 
+    def get_current_indxes(self, tx):
+        command = "SHOW INDEXES"
+        result = tx.run(command)
+        data_list = [i for i in result.data()]
+        return data_list
+
+    def drop_old_indexes(self, tx, query):
+        tx.run(query)
+
     def wipe_db(self, session, split=False):
         wipe_timer = time.perf_counter()
         self.log.info('In process of wipping Database...')
+
         failed_nodes = 1
         deleted_nodes = 0
         while failed_nodes > 0:
@@ -1186,6 +1203,11 @@ class DataLoader:
         self.log.info(" ")
         self.wipe_timer = time.perf_counter() - wipe_timer
         self.log.info(f'{deleted_nodes} nodes deleted in {self.wipe_timer:.2f}')
+
+        result = qry_result = session.execute_write(self.get_current_indxes)
+        for curr_idx in result:
+            query = f"drop index {curr_idx['name']} IF EXISTS;"
+            session.execute_write(self.drop_old_indexes, query)
 
     def wipe_db_split(self, session):
         while True:

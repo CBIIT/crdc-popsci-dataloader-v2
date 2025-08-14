@@ -16,16 +16,16 @@ Nodes:
   #     - property_3
   #     - property_4
   #     - property_5
-  # program:  
-  #   Desc: The Program node contains properties which describe any broad framework and/or administrative umbrella into which inter-related projects, and/or studies/trials and/or other research activities can be grouped, based upon their origins and/or scientific focus. These programs may or may not directly relate to any formal program, e.g. NCI funding programs. Example - Clinical Proteomic Tumor Analysis.
-  #   Tags:
-  #     Category: administrative
-  #     Assignment: core
-  #     Class: primary
-  #     Template: 'Yes'
-  #   Props:
-  #     - program_name #11444542
-  #     - program_short_name #11459801
+  #program:  
+  #  Desc: The Program node contains properties which describe any broad framework and/or administrative umbrella into which inter-related projects, and/or studies/trials and/or other research activities can be grouped, based upon their origins and/or scientific focus. These programs may or may not directly relate to any formal program, e.g. NCI funding programs. Example - Clinical Proteomic Tumor Analysis.
+  #  Tags:
+  #    Category: administrative
+  #    Assignment: core
+  #    Class: primary
+  #    Template: 'Yes'
+  #  Props:
+  #    - program_name #11444542
+  #    - program_short_name #11459801
   # project:
   #   Desc: text <WORK NEEDED HERE>
   #   Tags:
@@ -228,13 +228,15 @@ Relationships:
     Mul: many_to_one
     Ends:
       - Src: study
-        Dst: project
-      - Src: study # so can a lowest-level study belong directly to a highest-level program?
-        Dst: program
-      #- Src: project # this relationship can be removed because project is above study?
-        #Dst: study
-      - Src: project # this seems legitimate
-        Dst: program     
+        Dst: master_node
+  #    - Src: study
+  #      Dst: project
+  #    - Src: study # so can a lowest-level study belong directly to a highest-level program?
+  #      Dst: program
+  #    #- Src: project # this relationship can be removed because project is above study?
+  #      #Dst: study
+  #    - Src: project # this seems legitimate
+  #      Dst: program     
     Props: null
   associated_with: # group all file relationships in here?
     Mul: many_to_one
@@ -249,11 +251,11 @@ Relationships:
         Dst: study
       # - Src: comorbidity
       #   Dst: study
-      - Src: primary_diagnosis
-        Dst: study
-      - Src: study_demographic
-        Dst: study
-        Mul: one_to_one
+    #  - Src: primary_diagnosis
+    #    Dst: study
+    #  - Src: study_demographic
+    #    Dst: study
+    #    Mul: one_to_one
       - Src: study_state_province_territory
         Dst: study
       - Src: study_country

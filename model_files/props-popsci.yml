@@ -35,6 +35,7 @@ Properties:
     TBD: String
 
   id_fields:
+    master_node: node_name
     study: study_short_name
     participant: participant_id
     data_file: data_file_name
@@ -44,6 +45,6 @@ Properties:
     study_personnel: study_personnel_record_id
     study_state_province_territory: study_state_record_id
     data_collection: data_collection_record_id
-    study_demographic: study_demographic_record_id
-    primary_diagnosis: primary_diagnosis_record_id
+    #study_demographic: study_demographic_record_id
+    #primary_diagnosis: primary_diagnosis_record_id
 

@@ -496,7 +496,7 @@ class DataLoader:
             if loading_mode != DELETE_MODE:
                 nodes_done = 0
                 self.log.info("")
-                self.log.info("making relationships for node: {txt}")
+                self.log.info(f"making relationships for node: {txt}")
                 while nodes_done < len(txt):
                     batch_time = time.time()
                     if len(txt) <= batch_size:

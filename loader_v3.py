@@ -16,9 +16,10 @@ from bento.common.utils import print_config, get_log_file, load_plugin
 import time
 
 from config import BentoConfig
-from data_loader_v3 import DataLoader   # udpated to use new version of data loader
+from data_loader_v4 import DataLoader   # udpated to use new version of data loader
 from bento.common.s3_v2 import S3Bucket
 
+from participant_summary import create_summary_data
 
 if LOG_PREFIX not in os.environ:
     os.environ[LOG_PREFIX] = 'Data_Loader'
@@ -227,6 +228,17 @@ def prepare_plugin(config, schema):
     return load_plugin(config.module_name, config.class_name, config.params)
 
 
+def show_log_handlers(root_logger):
+    """
+    Prints the handlers associated with the root logger and all other named loggers.
+    """
+    print(f"Root Logger: {root_logger}")
+    if not root_logger.handlers:
+        print("  No handlers configured for the root logger.")
+    for handler in root_logger.handlers:
+        print(f"  - {handler}")
+
+
 # Data loader will try to load all TSV(.TXT) files from given directory into Neo4j
 # optional arguments includes:
 # -i or --uri followed by Neo4j server address and port in format like bolt://12.34.56.78:7687
@@ -296,6 +308,7 @@ def main():
                                           config.wipe_db, config.max_violations, split=config.split_transactions,
                                           no_backup=config.no_backup, neo4j_uri=config.neo4j_uri,
                                           backup_folder=config.backup_folder)
+                create_summary_data(driver)
             if driver:
                 driver.close()
             if restore_cmd:

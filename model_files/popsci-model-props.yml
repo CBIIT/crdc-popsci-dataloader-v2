@@ -1021,6 +1021,8 @@ PropDefinitions:
       units:
         - days
       value_type: number
+    minimum: 365
+    maximum: 365000
     Req: 'Yes'
   age_at_first_cancer_diagnosis:
     Desc: <The age (in days) of the participant when the participant was first diagnosed with cancer.> The age of the participant as of first diagnosis of cancer, measured in days. <br>CDE ID = 

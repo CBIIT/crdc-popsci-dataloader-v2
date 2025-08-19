@@ -166,6 +166,9 @@ class DataLoader:
         self.update_dict_timer = 0
         self.relationship_passed = 0
         self.load_relation_time = 0
+        self.cancer_fields = ["cancer_diagnosis_primary_site",
+                              "cancer_diagnosis_disease_morphology",
+                              "age_at_first_cancer_diagnosis"]
 
         if plugins:
             for plugin in plugins:
@@ -262,6 +265,8 @@ class DataLoader:
             return True
 
     def check_column_names(self, file_name):
+        if file_name == "master_node":  # do not validate this file (Does not exist)
+            return True
         self.log.info(f"preforming column wide validation for: {file_name}")
         curr_df = self.file_dict[file_name]
         # if "type" in curr_df:
@@ -270,21 +275,24 @@ class DataLoader:
             self.log.error(f"In {file_name} the column 'Type' is missing'")
             return False
 
-        z = self.schema.get_props_for_node(file_name)
-        schema_df = pd.DataFrame.from_dict(z, orient='index')
-        schema_df.reset_index(inplace=True)
-        schema_df.rename(columns={"index": "file_type"}, inplace=True)
-        schema_df = schema_df[~schema_df["file_type"].str.contains("_original")]  # this is not part of the model
-        schema_df = schema_df[~schema_df["file_type"].str.contains("_unit")]      # this is not part of the model
-        # remove fields that point back to this node (no child)
+        try:
+            z = self.schema.get_props_for_node(file_name)
+            schema_df = pd.DataFrame.from_dict(z, orient='index')
+            schema_df.reset_index(inplace=True)
+            schema_df.rename(columns={"index": "file_type"}, inplace=True)
+            schema_df = schema_df[~schema_df["file_type"].str.contains("_original")]  # this is not part of the model
+            schema_df = schema_df[~schema_df["file_type"].str.contains("_unit")]      # this is not part of the model
+            # remove fields that point back to this node (no child)
 
-        id_fields = self.schema.props.id_fields
-        id_fields = pd.DataFrame([(i, f"{i}.{id_fields[i]}") for i in id_fields], columns=["file_name", "primary_key"])
-        schema_df = schema_df[~schema_df["Type"].str.contains("""direction:IN""")]
-        for curr_field in id_fields.index:
-            x = schema_df[schema_df["Type"].str.contains(f"{id_fields.loc[curr_field]['file_name']}")]
-            schema_df.loc[x.index, "file_type"] = id_fields.loc[curr_field]["primary_key"]
-            schema_df.loc[x.index, "Type"] = "String"
+            id_fields = self.schema.props.id_fields
+            id_fields = pd.DataFrame([(i, f"{i}.{id_fields[i]}") for i in id_fields], columns=["file_name", "primary_key"])
+            schema_df = schema_df[~schema_df["Type"].str.contains("""direction:IN""")]
+            for curr_field in id_fields.index:
+                x = schema_df[schema_df["Type"].str.contains(f"{id_fields.loc[curr_field]['file_name']}")]
+                schema_df.loc[x.index, "file_type"] = id_fields.loc[curr_field]["primary_key"]
+                schema_df.loc[x.index, "Type"] = "String"
+        except Exception as e:
+            print(e)
 
         input_colums = list(curr_df.columns)
         if "type" in input_colums:
@@ -750,6 +758,8 @@ class DataLoader:
 
     # Validate file
     def validate_file(self, file_name, max_violations):
+        if file_name == "master_node":
+            return True
         self.log.info(f"preforming data level validation for: {file_name}")
         df = self.file_dict[file_name]
         df = df.astype(str)     # make everything strings, even numbers
@@ -758,15 +768,7 @@ class DataLoader:
         properties = self.schema.nodes[obj[NODE_TYPE]][PROPERTIES]
         no_cancer = []
 
-        # todo fix this section with mode?
-        cancer_fields = ["cancer_diagnosis_primary_site",
-                         "cancer_diagnosis_disease_morphology",
-                         "age_at_first_cancer_diagnosis"]
-
         for curr_field in df.columns:
-            if curr_field == "age_at_enrollment":
-                print("x")
-
             need_to_check = True
             if curr_field == "type":
                 need_to_check = False   # type is not in the model but is part of the submitted files
@@ -788,6 +790,14 @@ class DataLoader:
                         valid_list = properties[curr_field]["item_type"]["enum"]
                     else:
                         print("item type no enum")
+                if "minimum" in properties[curr_field]:
+                    min_val = float(properties[curr_field]["minimum"])
+                    max_val = float(properties[curr_field]["maximum"])
+                    has_val = df.query("{0} == {0}".format(curr_field))
+                    has_val[curr_field] = has_val[curr_field].astype(float)
+                    out_of_range = has_val.query("{0} < {1} or {0} > {2}".format(curr_field, min_val, max_val))
+                    if len(out_of_range) > 0:
+                        self.log.error(f'{curr_field} has {len(out_of_range)} values outside the acceptable range: [{min_val}, {max_val}]')
                 if "Req" in properties[curr_field]:
                     if properties[curr_field]["Req"] == "Yes":
                         check_blank = df.query("{0} != {0} or {0} == 'nan'".format(curr_field))
@@ -798,19 +808,21 @@ class DataLoader:
                         check_blank = df.query("{0} != {0}".format(curr_field))
                         if len(check_blank) > 0:
                             self.log.warning(f'property is blank: "{curr_field}" is empty!')
-                if curr_field in cancer_fields:
+                if curr_field in self.cancer_fields:
                     no_cancer = df.query("participant_case_indicator != 'Yes'")
-                    df = df.query("participant_case_indicator == 'Yes'")
+                    test_df = df.query("participant_case_indicator == 'Yes'")
+                else:
+                    test_df = df
 
                 if len(valid_list) > 0:
                     # allow for piked entries to be validated correctly
-                    df[curr_field] = [i.split("|") for i in df[curr_field]]
-                    df = df.explode(curr_field)
-                    df[curr_field] = [i.strip() for i in df[curr_field]]
+                    test_df[curr_field] = [i.split("|") for i in test_df[curr_field]]
+                    test_df = test_df.explode(curr_field)
+                    test_df[curr_field] = [i.strip() for i in test_df[curr_field]]
 
-                    error_data = list(set(list(df[curr_field])) - set(valid_list))
+                    error_data = list(set(list(test_df[curr_field])) - set(valid_list))
                     if len(error_data) > 0:
-                        if curr_field in cancer_fields:
+                        if curr_field in self.cancer_fields:
                             self.log.error(f"In {curr_field}: errors were found: {error_data}.")
                         else:
                             self.log.error(f"In {curr_field}: errors were found: {error_data}.  valid values are: {valid_list}")

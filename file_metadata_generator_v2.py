@@ -115,7 +115,7 @@ def fetch_file_metadata(s3_client, config_data, manifest_info):
         file_dict_info = {
             'type': curr_file["type"],
             'study.study_short_name': curr_file["study.study_short_name"],
-            'file_name': curr_file["data_file_name"],  # file_name_only,
+            'data_file_name': curr_file["data_file_name"],  # file_name_only,
             'data_file_type': curr_file["data_file_type"],
             'data_file_description': curr_file['data_file_description'],
             'uuid': file_uuid,
@@ -128,11 +128,12 @@ def fetch_file_metadata(s3_client, config_data, manifest_info):
         }
 
         index_dict_info = {
-            "GUID": f"{config_data['Index_GUID_Prefix']}{file_uuid}",
+            "guid": f"{config_data['Index_GUID_Prefix']}{file_uuid}",
             'md5': md5_calc,
             'size': file_size,
-            'acl': "['Open']",
-            'url': file_location
+            'acl': "['*']",
+            'authz': "['/open']",
+            'urls': file_location
         }
 
         metadata_list.append(file_dict_info)

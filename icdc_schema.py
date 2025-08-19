@@ -140,6 +140,7 @@ class ICDC_Schema:
         :param is_relationship: if input is a relationship
         :return:
         """
+
         properties = self._process_properties(desc)
 
         # All nodes and relationships that has properties will be save to self.nodes
@@ -427,9 +428,9 @@ class ICDC_Schema:
                 self.log.debug('Property "{}" is not in data model!'.format(key))
             else:
                 prop_type = properties[key]
-                if key == "cancer_diagnosis_primary_site":
-                    if obj["cancer_diagnosis_primary_site"] != "Not Applicable":
-                        print("check")
+            #    if key == "cancer_diagnosis_primary_site":
+            #        if obj["cancer_diagnosis_primary_site"] != "Not Applicable":
+            #            print("check")
                 if not self._validate_type(prop_type, value):
                     result['result'] = False
                     result['messages'].append(
@@ -492,14 +493,14 @@ class ICDC_Schema:
             if not isinstance(str_value, dict):
                 return False
         elif model_type[PROP_TYPE] == 'String':
-            if ENUM in model_type and YAML_DICT not in model_type:
+            if ENUM in model_type: #  and YAML_DICT not in model_type:
                 if not isinstance(str_value, str):
                     return False
                 if str_value != '' and str_value not in model_type[ENUM]:
                     return False
-            elif YAML_DICT in model_type:
-                if str_value != '' and str_value not in model_type[ENUM]:
-                    return False
+          #  elif YAML_DICT in model_type:
+          #      if str_value != '' and str_value not in model_type[ENUM]:
+          #          return False
                 
         elif model_type[PROP_TYPE] == 'Date':
             if not isinstance(str_value, str):

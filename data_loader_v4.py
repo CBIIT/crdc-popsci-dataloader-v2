@@ -12,6 +12,7 @@ import json
 import time
 from timeit import default_timer as timer
 from bento.common.utils import get_host, DATETIME_FORMAT, reformat_date
+import copy
 
 from neo4j import Driver
 import pandas as pd
@@ -44,7 +45,7 @@ PROVIDED_PARENTS = 'provided_parents'
 RELATIONSHIP_PROPS = 'relationship_properties'
 BATCH_SIZE = 1000
 ID_FUNC = 'elementID'
-MASTER_NODE = True
+MASTER_NODE = False
 
 pd.options.mode.chained_assignment = None
 
@@ -345,11 +346,21 @@ class DataLoader:
                 file_data = file_data.query("type == type")  # remove blank lines in file
             except Exception as e:
                 print(e)
-            file_type = list(set(file_data["type"]))[0]
-            if file_type not in self.file_dict.keys():
-                self.file_dict[file_type] = file_data
-            else:
-                self.file_dict[file_type] = pd.concat([file_data, self.file_dict[file_type]])
+
+            # check_race = [i for i in file_data.columns if "race" in i]
+            # if len(check_race) > 0:
+            #    race_list = file_data[check_race[0]].tolist()
+            #    file_data["number_of_races"] = [0 if i in ['Not allowed to collect', 'Not Reported']
+            #                                    else len(i.split("|")) for i in race_list]
+
+            try:
+                file_type = list(set(file_data["type"]))[0]
+                if file_type not in self.file_dict.keys():
+                    self.file_dict[file_type] = file_data
+                else:
+                    self.file_dict[file_type] = pd.concat([file_data, self.file_dict[file_type]])
+            except Exception as e:
+                print(e)
 
     def add_master_node(self):
         self.file_dict["master_node"] = pd.DataFrame(columns=["type", "desc", "node_name"])
@@ -361,14 +372,15 @@ class DataLoader:
              split=False, no_backup=True, backup_folder="/", neo4j_uri=None):
 
         self.create_data_dictionary(file_list)
-        if MASTER_NODE:
-            self.add_master_node()
 
         """ add code here to validate the file dictionary """
 
         start = timer()
         if not self.validate_file_dict(cheat_mode, max_violations):
             return False
+        
+        if MASTER_NODE:
+            self.add_master_node()
 
         if not no_backup and not dry_run:
             if not neo4j_uri:
@@ -504,7 +516,7 @@ class DataLoader:
             if loading_mode != DELETE_MODE:
                 nodes_done = 0
                 self.log.info("")
-                self.log.info(f"making relationships for node: {txt}")
+                self.log.info(f"making relationships for node: {txt[0]['type']}")
                 while nodes_done < len(txt):
                     batch_time = time.time()
                     if len(txt) <= batch_size:
@@ -624,10 +636,13 @@ class DataLoader:
             id_value = self.schema.get_id(obj2)
             node_type = obj2.get(NODE_TYPE)
             if node_type:
-                if not id_value:
-                    obj2[UUID] = self.schema.get_uuid_for_node(node_type, self.get_signature(obj2))
-                elif id_field != UUID:
-                    obj2[UUID] = self.schema.get_uuid_for_node(node_type, id_value)
+                try:
+                    if not id_value:
+                        obj2[UUID] = self.schema.get_uuid_for_node(node_type, self.get_signature(obj2))
+                    elif id_field != UUID:
+                        obj2[UUID] = self.schema.get_uuid_for_node(node_type, str(id_value))
+                except Exception as e:
+                    print(e)
             else:
                 print('No "type" property in node')
         return obj2
@@ -772,6 +787,8 @@ class DataLoader:
             need_to_check = True
             if curr_field == "type":
                 need_to_check = False   # type is not in the model but is part of the submitted files
+            elif curr_field not in properties:
+                need_to_check = False   # type is not in the model but is part of the submitted files
             elif len(curr_field.split('.')) > 1:
                 need_to_check = False  # this is a relationship column, value depends on another file
             elif "@relation" in properties[curr_field]["Type"]:
@@ -798,7 +815,7 @@ class DataLoader:
                     out_of_range = has_val.query("{0} < {1} or {0} > {2}".format(curr_field, min_val, max_val))
                     if len(out_of_range) > 0:
                         self.log.error(f'{curr_field} has {len(out_of_range)} values outside the acceptable range: [{min_val}, {max_val}]')
-                if "Req" in properties[curr_field]:
+                if "Req" in properties[curr_field] and curr_field not in self.cancer_fields:
                     if properties[curr_field]["Req"] == "Yes":
                         check_blank = df.query("{0} != {0} or {0} == 'nan'".format(curr_field))
                         if len(check_blank) > 0:
@@ -812,7 +829,7 @@ class DataLoader:
                     no_cancer = df.query("participant_case_indicator != 'Yes'")
                     test_df = df.query("participant_case_indicator == 'Yes'")
                 else:
-                    test_df = df
+                    test_df = df.copy()
 
                 if len(valid_list) > 0:
                     # allow for piked entries to be validated correctly
@@ -827,7 +844,7 @@ class DataLoader:
                         else:
                             self.log.error(f"In {curr_field}: errors were found: {error_data}.  valid values are: {valid_list}")
                         violations += 1
-                if len(no_cancer) > 0:
+                if len(no_cancer) > 0 and curr_field in self.cancer_fields:
                     error_data = no_cancer[no_cancer[curr_field] != 'nan']
                     if len(error_data) > 0:
                         self.log.error(f"In {curr_field}: participant is listed as participant_case_indicator == 'No' " +
@@ -997,6 +1014,8 @@ class DataLoader:
             self.load_failed += qry_result["operations"]['failed']
 
     def load_nodes(self, session, tx, file_name, file_dict, loading_mode,  wipe_db, split=False):
+        if file_name == "study_personnel":
+            print("x")
         if loading_mode == NEW_MODE:
             action_word = 'Loading new'
         elif loading_mode == UPSERT_MODE:
@@ -1237,6 +1256,9 @@ class DataLoader:
         else:
             for curr_relationship in check_relationship:
                 try:
+                    if node_type == "study" and MASTER_NODE:
+                        self.schema.relationships["study"] = {'master_node': {'relationship_type': 'belongs_to', 'Mul': 'many_to_one'}}
+                    
                     relation = self.schema.relationships[node_type][curr_relationship.split('.')[0]]['relationship_type']
                     qry_str = "  "
                     qry_str += f"MATCH (m:{curr_relationship.split('.')[0]}) "

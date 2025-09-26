@@ -264,9 +264,11 @@ def main():
             if config.dataset:
                 txt_files = glob.glob('{}/*.txt'.format(config.dataset))
                 tsv_files = glob.glob('{}/*.tsv'.format(config.dataset))
+                csv_files = glob.glob('{}/*.csv'.format(config.dataset))
                 txt_files_lvl2 = glob.glob('{}/*/*.txt'.format(config.dataset))
                 tsv_files_lvl2 = glob.glob('{}/*/*.tsv'.format(config.dataset))
-                file_list = file_list + txt_files + tsv_files + txt_files_lvl2 + tsv_files_lvl2
+                csv_files_lvl2 = glob.glob('{}/*/*.csv'.format(config.dataset))
+                file_list = file_list + txt_files + tsv_files + csv_files + txt_files_lvl2 + tsv_files_lvl2  + csv_files_lvl2
             else:
                 log.error('Local Mode was specified and No dataset was provided! ')
                 log.error('Please specify a dataset in config file or with CLI argument --dataset')

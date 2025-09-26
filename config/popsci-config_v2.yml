@@ -4,13 +4,13 @@ Config:
 
   neo4j:
     # Location of Neo4j server, e.g., bolt://127.0.0.1:7687, can be overridden by -i/--uir argument
-    #uri: bolt://localhost:7687     #for v4
-    uri: neo4j://127.0.0.1:7687   #for v5
+    uri: bolt://localhost:7687     #for v4
+    #uri: neo4j://127.0.0.1:7687   #for v5
     # Neo4j username, can be overridden by -u/--user argument
     user: neo4j
     # Neo4j password, if not set here, will try to read from environment variable NEO_PASSWORD. CLI argument -p/--password will overwrite either settings
-    password: #submitter2025!
-        MockDataPass2025!  #for v5.0.1
+    password: SubmitterData2025! # aitestingdata2025
+
     
   # Schema files' locations, usually two file, can be overridden by -s/--schema argument
   schema:
@@ -21,8 +21,10 @@ Config:
      location:  ./model_files/cancer_site_location_v2.yaml
      histology: ./model_files/cancer_histology_v2.yaml
 
+    #pull the data files directly from S3
+    #comment out this section if not loading these files
   neo4j_file_summmary:
-     #location: 's3://popsci-dev-files-dedicated-bucket/manifest_index_results'
+     location: 's3://popsci-dev-files-dedicated-bucket/manifest_index_results'
   
 
   # Plugin can be used to create additional nodes and relationships
@@ -38,7 +40,7 @@ Config:
       ./model_files/props-popsci.yml
       
   # Skip validations, aka. Cheat Mode, can be overridden by -c/--cheat-mode argument
-  cheat_mode: false
+  cheat_mode: False
   # Validations only, skip loading, can be overridden by -d/--dry-run argument
   dry_run: false
   # Wipe clean database before loading, you'll lose all data!, can be overridden by --wipe-db argument
@@ -62,8 +64,8 @@ Config:
   # Loading mode, can be UPSERT_MODE, NEW_MODE or DELETE_MODE, default is UPSERT_MODE, can be overridden by -m/--mode argument
   loading_mode: UPSERT_MODE
   # Location of dataset, can be overridden by --dataset argument
-  dataset: '../Mock Data Generator V2/Mock_Data_Output Old/PLCO_Mock_Data' #'../Mock Data Generator V2/Mock_Data_Output/SMCT_Mock_Data'
-  #dataset: 'C:\Users\breadsp2\Desktop\PLCO Data Loading Files'
+  #dataset: #'C:\Users\breadsp2\Desktop\Mock Data Generator V2\AI_Mock_Data'
+  dataset: 'C:\Users\breadsp2\Desktop\Submitter Data Files' #'\PBCS Data Loading Files'
 
   # name of the database being written to, defautls to neo4j
   database_name: 'neo4j'

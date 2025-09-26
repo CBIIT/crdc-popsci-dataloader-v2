@@ -4,20 +4,31 @@ Created on Thu Jul 24 07:55:03 2025
 
 @author: breadsp2
 """
-from neo4j import GraphDatabase
+
 from config import BentoConfig
+from neo4j import GraphDatabase
 
 
 def get_study_summary(tx):
     neo4j_query = ""
-    neo4j_query += "MATCH (s:study)-[r]-(p:participant) "
-    neo4j_query += "RETURN s.study_short_name as study_short_name, "
-    neo4j_query += "toInteger(round(max(p.age_at_enrollment / 365.25)))  as participant_maximum_age, "
-    neo4j_query += "toInteger(round(apoc.agg.median(p.age_at_enrollment / 365.25))) as participant_median_age, "
-    neo4j_query += "toInteger(round(avg(p.age_at_enrollment / 365.25))) as participant_mean_age, "
-    neo4j_query += "toInteger(round(min(p.age_at_enrollment / 365.25))) as participant_minimum_age, "
-    neo4j_query += "toInteger(s.study_beginning_year) + ' - ' + COALESCE(s.study_ending_year,'On Going') as study_period, "
-    neo4j_query += "count(distinct(p)) as number_of_participants"
+    # neo4j_query += "MATCH (s:study)-[r]-(p:participant) "
+    # neo4j_query += "RETURN s.study_short_name as study_short_name, "
+    # neo4j_query += "count(distinct(p)) as number_of_participants, "
+    # neo4j_query += "collect(distinct p.cancer_diagnosis_primary_site) as cancer_diagnosis_primary_site_list, "
+    # neo4j_query += "toInteger(round(max(p.age_at_enrollment / 365.25)))  as participant_maximum_age, "
+    # neo4j_query += "toInteger(round(apoc.agg.median(p.age_at_enrollment / 365.25))) as participant_median_age, "
+    # neo4j_query += "toInteger(round(avg(p.age_at_enrollment / 365.25))) as participant_mean_age, "
+    # neo4j_query += "toInteger(round(min(p.age_at_enrollment / 365.25))) as participant_minimum_age, "
+    # neo4j_query += "toInteger(s.study_beginning_year) + ' - ' + COALESCE(s.study_ending_year,'On Going') as study_period "
+    # print("this " + neo4j_query)
+
+
+    #for distinct count of cancer_diagnosis_primary_site for the study tab
+    neo4j_query += "MATCH (s:study)-[r]-(p:participant)"
+    neo4j_query += "with collect(distinct p.cancer_diagnosis_primary_site) as cancer_diagnosis_primary_site_list,s,p "
+    neo4j_query += "RETURN s.study_short_name as study_short_name,"
+    neo4j_query += "count(distinct(p)) as number_of_participants,"
+    neo4j_query += "count( distinct cancer_diagnosis_primary_site_list) as cancer_diagnosis_primary_site_count"
     result = tx.run(neo4j_query)
     data_list = [i for i in result.data()]
     return data_list
@@ -47,7 +58,7 @@ def process_data_in_batches(tx, data, node_type):
     if data_list[0]["failedBatches"] == 0:
         return data_list[0]
     else:
-        print("error found")
+        print("error found" + str(data_list[0]))
         return []
 
 
@@ -57,7 +68,7 @@ def main():
     driver = GraphDatabase.driver(config.neo4j_uri, auth=(config.neo4j_user, config.neo4j_password), encrypted=False)
 
     with driver.session() as session:
-        # old_data = session.execute_read(get_study_data)
+        # old_data = session.read_transaction(get_study_data)
         records = session.execute_read(get_study_summary)
         qry_result = session.execute_write(process_data_in_batches, records, "study")
 

@@ -12,7 +12,7 @@ import json
 import time
 from timeit import default_timer as timer
 from bento.common.utils import get_host, DATETIME_FORMAT, reformat_date
-import copy
+# import copy
 
 from neo4j import Driver
 import pandas as pd
@@ -303,8 +303,8 @@ class DataLoader:
         missing_from_schema = list(set(input_colums) - set(schema_cols))
         missing_from_file = list(set(schema_cols) - set(input_colums))
 
-        if len(missing_from_schema) > 0:
-            self.log.error(f"In {file_name} the following columns are in submission but not in schema: {missing_from_schema}")
+#        if len(missing_from_schema) > 0:
+#            self.log.error(f"In {file_name} the following columns are in submission but not in schema: {missing_from_schema}")
         if len(missing_from_file) > 0:
             self.log.error(f"In {file_name} the following columns are in the schema but missing from submission: {missing_from_file}")
         if len(missing_from_file) == 0 and len(missing_from_schema) == 0:
@@ -316,10 +316,18 @@ class DataLoader:
             self.log.info('')
             self.log.info('Preforming data validation')
             validation_failed = False
+            study_names = ["study not found"]
+            index_files = []
+            if "study" in self.file_dict:
+                study_names = list(self.file_dict["study"]["study_short_name"])
+            if "data_file" in self.file_dict:
+                index_files = list(set(self.file_dict["data_file"]["study.study_short_name"]))
+            study_names = list(set(study_names + index_files))
+            
             for txt in self.file_dict:
                 if not self.check_column_names(txt):
                     validation_failed = True
-                if not self.validate_file(txt, max_violations):
+                if not self.validate_file(txt, max_violations, study_names):
                     self.log.error('Validating file "{}" failed!'.format(txt))
                     validation_failed = True
             return not validation_failed
@@ -338,6 +346,8 @@ class DataLoader:
         for txt in file_list:
             if txt[:2] == "s3":  # files get loaded directly from S3
                 file_data = pd.read_csv(txt, sep='\t', header=0, encoding='windows-1252', storage_options={"profile": 'Popsci_Dev'})
+            if txt[-3:] == "csv":
+                file_data = pd.read_csv(txt, encoding='windows-1252')
             else:  # files are loaded from local
                 file_data = pd.read_csv(txt, sep='\t', header=0, encoding='windows-1252')
 
@@ -352,6 +362,11 @@ class DataLoader:
             #    race_list = file_data[check_race[0]].tolist()
             #    file_data["number_of_races"] = [0 if i in ['Not allowed to collect', 'Not Reported']
             #                                    else len(i.split("|")) for i in race_list]
+            if "study_type" in file_data.columns:  # was part of mock data but no longer exists in the model
+                file_data.drop("study_type", axis=1, inplace=True)
+            if "number_of_participants" in file_data.columns:  # was part of mock data but no longer exists in the model
+                file_data.drop("number_of_participants", axis=1, inplace=True)
+
 
             try:
                 file_type = list(set(file_data["type"]))[0]
@@ -772,7 +787,7 @@ class DataLoader:
         return True
 
     # Validate file
-    def validate_file(self, file_name, max_violations):
+    def validate_file(self, file_name, max_violations, study_names):
         if file_name == "master_node":
             return True
         self.log.info(f"preforming data level validation for: {file_name}")
@@ -781,19 +796,22 @@ class DataLoader:
         violations = 0
         obj = df.iloc[0].to_dict()
         properties = self.schema.nodes[obj[NODE_TYPE]][PROPERTIES]
+        properties["study.study_short_name"] = {"Type":"String", "Req":"Yes", "enum": set(study_names)}
         no_cancer = []
 
         for curr_field in df.columns:
             need_to_check = True
-            if curr_field == "type":
+            if curr_field in ["type", "number_of_participants"]:
                 need_to_check = False   # type is not in the model but is part of the submitted files
-            elif curr_field not in properties:
-                need_to_check = False   # type is not in the model but is part of the submitted files
-            elif len(curr_field.split('.')) > 1:
-                need_to_check = False  # this is a relationship column, value depends on another file
-            elif "@relation" in properties[curr_field]["Type"]:
-                need_to_check = False  # this is a relation variable and not validated here
+            elif curr_field in properties:
+                if "@relation" in properties[curr_field]["Type"]:
+                    need_to_check = False  # this is a relation variable and not validated here
 
+                
+            #    need_to_check = False   # type is not in the model but is part of the submitted files
+            #elif len(curr_field.split('.')) > 1:
+            #    need_to_check = False  # this is a relationship column, value depends on another file
+           
             if need_to_check:
                 valid_list = []
                 if curr_field == "cancer_diagnosis_primary_site":
@@ -817,7 +835,7 @@ class DataLoader:
                         self.log.error(f'{curr_field} has {len(out_of_range)} values outside the acceptable range: [{min_val}, {max_val}]')
                 if "Req" in properties[curr_field] and curr_field not in self.cancer_fields:
                     if properties[curr_field]["Req"] == "Yes":
-                        check_blank = df.query("{0} != {0} or {0} == 'nan'".format(curr_field))
+                        check_blank = df.query("`{0}` != `{0}` or `{0}` == 'nan'".format(curr_field))
                         if len(check_blank) > 0:
                             violations += 1
                             self.log.error(f'Required property: "{curr_field}" is empty!')
@@ -1034,8 +1052,8 @@ class DataLoader:
                 file_data[col] = file_data[col].fillna(np.nan)
             elif file_data[col].dtype == 'datetime64[ns]':
                 file_data[col] = file_data[col].fillna(pd.to_datetime('1900-01-01'))
-            else:
-                file_data[col] = file_data[col].fillna("missing data")
+#            else:
+#                file_data[col] = file_data[col].fillna("missing data")
 
         # terms would only exist if conversion files are present, else will ignore
         if 'location_codes' in dir(self.schema):
@@ -1242,7 +1260,7 @@ class DataLoader:
 
         missing_id = file_data_df.query("Node_Exists not in ['both']")
         if len(missing_id) > 0:
-            self.log_error(f"Node that failed is {node_type}")
+            self.log.error(f"Node that failed is {node_type}")
             self.log.error(f"{missing_id}")
             self.log.error("Unable to make relationships: file data does not align properly with database")
 

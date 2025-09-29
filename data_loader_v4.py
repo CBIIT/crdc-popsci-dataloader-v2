@@ -45,7 +45,7 @@ PROVIDED_PARENTS = 'provided_parents'
 RELATIONSHIP_PROPS = 'relationship_properties'
 BATCH_SIZE = 1000
 ID_FUNC = 'elementID'
-MASTER_NODE = False
+#MASTER_NODE = False
 
 pd.options.mode.chained_assignment = None
 
@@ -266,8 +266,8 @@ class DataLoader:
             return True
 
     def check_column_names(self, file_name):
-        if file_name == "master_node":  # do not validate this file (Does not exist)
-            return True
+        #if file_name == "master_node":  # do not validate this file (Does not exist)
+        #    return True
         self.log.info(f"preforming column wide validation for: {file_name}")
         curr_df = self.file_dict[file_name]
         # if "type" in curr_df:
@@ -344,12 +344,15 @@ class DataLoader:
     def create_data_dictionary(self, file_list):
         self.file_dict = {}
         for txt in file_list:
-            if txt[:2] == "s3":  # files get loaded directly from S3
-                file_data = pd.read_csv(txt, sep='\t', header=0, encoding='windows-1252', storage_options={"profile": 'Popsci_Dev'})
-            if txt[-3:] == "csv":
-                file_data = pd.read_csv(txt, encoding='windows-1252')
-            else:  # files are loaded from local
-                file_data = pd.read_csv(txt, sep='\t', header=0, encoding='windows-1252')
+            try:
+                if txt[:2] == "s3":  # files get loaded directly from S3
+                    file_data = pd.read_csv(txt, sep='\t', header=0, encoding='windows-1252', storage_options={"profile": 'Popsci_Dev'})
+                if txt[-3:] == "csv":
+                    file_data = pd.read_csv(txt, encoding='windows-1252')
+                else:  # files are loaded from local
+                    file_data = pd.read_csv(txt, sep='\t', header=0, encoding='windows-1252')
+            except Exception as e:
+                print(e)
 
             file_data.columns = [i.strip() for i in file_data.columns]
             try:
@@ -394,8 +397,8 @@ class DataLoader:
         if not self.validate_file_dict(cheat_mode, max_violations):
             return False
         
-        if MASTER_NODE:
-            self.add_master_node()
+        #if MASTER_NODE:
+        #    self.add_master_node()
 
         if not no_backup and not dry_run:
             if not neo4j_uri:
@@ -859,8 +862,10 @@ class DataLoader:
                     if len(error_data) > 0:
                         if curr_field in self.cancer_fields:
                             self.log.error(f"In {curr_field}: errors were found: {error_data}.")
+                            print(test_df.query(f"{curr_field} in {error_data}"))
                         else:
                             self.log.error(f"In {curr_field}: errors were found: {error_data}.  valid values are: {valid_list}")
+                            print(test_df.query(f"{curr_field} in {error_data}"))
                         violations += 1
                 if len(no_cancer) > 0 and curr_field in self.cancer_fields:
                     error_data = no_cancer[no_cancer[curr_field] != 'nan']
@@ -1052,8 +1057,8 @@ class DataLoader:
                 file_data[col] = file_data[col].fillna(np.nan)
             elif file_data[col].dtype == 'datetime64[ns]':
                 file_data[col] = file_data[col].fillna(pd.to_datetime('1900-01-01'))
-#            else:
-#                file_data[col] = file_data[col].fillna("missing data")
+            else:
+                file_data[col] = file_data[col].fillna("missing data")
 
         # terms would only exist if conversion files are present, else will ignore
         if 'location_codes' in dir(self.schema):
@@ -1274,8 +1279,8 @@ class DataLoader:
         else:
             for curr_relationship in check_relationship:
                 try:
-                    if node_type == "study" and MASTER_NODE:
-                        self.schema.relationships["study"] = {'master_node': {'relationship_type': 'belongs_to', 'Mul': 'many_to_one'}}
+                    #if node_type == "study" and MASTER_NODE:
+                    #    self.schema.relationships["study"] = {'master_node': {'relationship_type': 'belongs_to', 'Mul': 'many_to_one'}}
                     
                     relation = self.schema.relationships[node_type][curr_relationship.split('.')[0]]['relationship_type']
                     qry_str = "  "

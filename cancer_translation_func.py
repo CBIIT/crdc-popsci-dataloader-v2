@@ -48,4 +48,8 @@ def convert_codes(df, column_name, code_list):
         x = df.query("participant_case_indicator == 'No'")
         df.loc[x.index, column_name] = "N/A"
         df.loc[x.index, "ICD-O-3 Code" + column_name.replace("cancer_diagnosis", "")] = "N/A"
+        df.loc[x.index, "NCIt Concept Code"] = "Not Applicable"
+        df.loc[x.index, "NCIt Preferred Term"] = "Not Applicable"
+        df.loc[x.index, "cancer_diagnosis_primary_site"] = "Not Applicable"
+        df.loc[x.index, "cancer_diagnosis_disease_morphology"] = "Not Applicable"
     return df

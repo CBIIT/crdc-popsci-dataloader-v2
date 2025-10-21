@@ -320,8 +320,9 @@ class DataLoader:
             index_files = []
             if "study" in self.file_dict:
                 study_names = list(self.file_dict["study"]["study_short_name"])
-            if "data_file" in self.file_dict:
-                index_files = list(set(self.file_dict["data_file"]["study.study_short_name"]))
+            if "file" in self.file_dict:
+                index_files = list(set(self.file_dict["file"]["study.study_short_name"]))
+    
             study_names = list(set(study_names + index_files))
             
             for txt in self.file_dict:
@@ -1037,8 +1038,6 @@ class DataLoader:
             self.load_failed += qry_result["operations"]['failed']
 
     def load_nodes(self, session, tx, file_name, file_dict, loading_mode,  wipe_db, split=False):
-        if file_name == "study_personnel":
-            print("x")
         if loading_mode == NEW_MODE:
             action_word = 'Loading new'
         elif loading_mode == UPSERT_MODE:

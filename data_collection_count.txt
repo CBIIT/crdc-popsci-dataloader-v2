@@ -1,0 +1,153 @@
+Data Collection Categories Count: 72
+========================================
+
+ORIGINAL ORDER:
+--------------------
+ 1. Age
+ 2. Biological Sex
+ 3. Ethnicity and Race
+ 4. Education Level
+ 5. Employment Status
+ 6. Residential Information
+ 7. Language/Country of Origin
+ 8. Marital Status
+ 9. Socio-Economic Status
+10. Alcohol Consumption
+11. Cigarette Smoking
+12. Other Tobacco Products
+13. Dietary Intake
+14. Dietary Supplement Use
+15. Physical Activity
+16. Self-Reported Anthropometry
+17. Puberty, Menstruation, and Menopause
+18. Pregnancy and Parity
+19. Contraception
+20. Hormone Replacement
+21. Screening
+22. Sleep Habits
+23. Depression
+24. Family History of Cancer
+25. Prescription Medication Use
+26. Non-Prescription Medication
+27. Other Medical Conditions
+28. Other Psychosocial Variables
+29. Cancer Treatment
+30. Other Medical Treatments
+31. Infectious and Parasitic Diseases
+32. Neoplasms
+33. Neoplasms, Blood, Blood-forming Organs
+34. Endocrine, Nutritional, Metabolic
+35. Mental and Behavioral Disorders
+36. Nervous System
+37. Eye and Adnexa, Ear and Mastoid Process
+38. Circulatory System
+39. Respiratory System
+40. Digestive System
+41. Skin and Subcutaneous Tissue
+42. Musculoskeletal and Connective Tissue
+43. Genitourinary System
+44. Symptoms, Signs and Abnormal Clinical and Lab Findings
+45. Injury, Poisoning, Certain Other Consequences of External Causes
+46. Vital Status
+47. Breastfeeding
+48. Workplace Exposures
+49. Life Events, Beliefs, Values
+50. Quality of Life
+51. Social Support
+52. Physical Function Measures
+53. Measured Anthropometry
+54. Sexual Behavior and Health
+55. Radiation Exposure
+56. Health Insurance Status
+57. Fatigue
+58. Cognitive Function
+59. Family History of Heart Disease
+60. Other Family History
+61. Psychological Measures
+62. Pregnancy, Childbirth and the Puerperium
+63. Housing Exposures
+64. Chemical Exposure
+65. Immunization
+66. Family History of Diabetes
+67. Complementary and Alternative Medicine
+68. Other Medical Treatements
+69. Certain Conditions Originating in the Perinatal Period
+70. Congenital Malformations, Deformations and Chromosomal Abnormalities
+71. Sexual Orientation and Gender Identity
+72. Drug Use
+
+
+ALPHABETICAL ORDER:
+--------------------
+ 1. Age
+ 2. Alcohol Consumption
+ 3. Biological Sex
+ 4. Breastfeeding
+ 5. Cancer Treatment
+ 6. Certain Conditions Originating in the Perinatal Period
+ 7. Chemical Exposure
+ 8. Cigarette Smoking
+ 9. Circulatory System
+10. Cognitive Function
+11. Complementary and Alternative Medicine
+12. Congenital Malformations, Deformations and Chromosomal Abnormalities
+13. Contraception
+14. Depression
+15. Dietary Intake
+16. Dietary Supplement Use
+17. Digestive System
+18. Drug Use
+19. Education Level
+20. Employment Status
+21. Endocrine, Nutritional, Metabolic
+22. Ethnicity and Race
+23. Eye and Adnexa, Ear and Mastoid Process
+24. Family History of Cancer
+25. Family History of Diabetes
+26. Family History of Heart Disease
+27. Fatigue
+28. Genitourinary System
+29. Health Insurance Status
+30. Hormone Replacement
+31. Housing Exposures
+32. Immunization
+33. Infectious and Parasitic Diseases
+34. Injury, Poisoning, Certain Other Consequences of External Causes
+35. Language/Country of Origin
+36. Life Events, Beliefs, Values
+37. Marital Status
+38. Measured Anthropometry
+39. Mental and Behavioral Disorders
+40. Musculoskeletal and Connective Tissue
+41. Neoplasms
+42. Neoplasms, Blood, Blood-forming Organs
+43. Nervous System
+44. Non-Prescription Medication
+45. Other Family History
+46. Other Medical Conditions
+47. Other Medical Treatements
+48. Other Medical Treatments
+49. Other Psychosocial Variables
+50. Other Tobacco Products
+51. Physical Activity
+52. Physical Function Measures
+53. Pregnancy and Parity
+54. Pregnancy, Childbirth and the Puerperium
+55. Prescription Medication Use
+56. Psychological Measures
+57. Puberty, Menstruation, and Menopause
+58. Quality of Life
+59. Radiation Exposure
+60. Residential Information
+61. Respiratory System
+62. Screening
+63. Self-Reported Anthropometry
+64. Sexual Behavior and Health
+65. Sexual Orientation and Gender Identity
+66. Skin and Subcutaneous Tissue
+67. Sleep Habits
+68. Social Support
+69. Socio-Economic Status
+70. Symptoms, Signs and Abnormal Clinical and Lab Findings
+71. Vital Status
+72. Workplace Exposures

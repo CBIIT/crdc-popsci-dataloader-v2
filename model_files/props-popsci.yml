@@ -1,10 +1,7 @@
 Properties:
-  domain: cds.cancer.gov
-  rel_prop_delimiter: "$"
 
   plurals:
     study: studies
-    study_admin: study_admins
     participant: participants
     diagnosis: diagnoses
     treatment: treatments
@@ -35,16 +32,17 @@ Properties:
     TBD: String
 
   id_fields:
-    master_node: node_name
     study: study_short_name
     participant: participant_id
-    data_file: data_file_name
+    diagnosis: diagnosis_id
+    treatment: treatment_id
+    specimen: specimen_id
+    sample: sample_id
+    file: data_file_name
     associated_link: associated_link_record_id
+    data_collection: data_collection_record_id
     publication: publication_record_id
-    study_country: study_country_record_id
     study_personnel: study_personnel_record_id
     study_state_province_territory: study_state_record_id
-    data_collection: data_collection_record_id
-    #study_demographic: study_demographic_record_id
-    #primary_diagnosis: primary_diagnosis_record_id
+    study_country: study_country_record_id
 

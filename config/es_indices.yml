@@ -1,0 +1,877 @@
+Indices:
+  # min_max_bound_query
+  # Purpose:
+  #   this is for the explore page so help make the sliders work 
+  #   Compute global min/max bounds across studies for participant counts, enrollment/study years,
+  #   and participant ages. Used to power range filters and min/max bounding queries in the UI.
+  - index_name: min_max_bound_query
+    type: neo4j
+    mapping:
+      study_short_name:
+        type: keyword
+      number_of_participant_upper_bound:
+        type: integer
+      number_of_participant_lower_bound:
+        type: integer
+      enrollment_beginning_year_lower_bound:
+        type: integer
+      enrollment_ending_year_upper_bound:
+        type: integer
+      study_beginning_year_lower_bound:
+        type: integer
+      study_ending_year_upper_bound:
+        type: integer
+      participant_minimum_age:
+        type: integer
+      participant_maximum_age_upper_bound:
+        type: integer
+    cypher_query: "
+      optional MATCH (study:study)<-[:associated_with]-(participant:participant)
+      WITH toInteger(round(max(participant.age_at_enrollment / 365.25))) AS study_max_age, toInteger(round(min(participant.age_at_enrollment / 365.25))) AS study_min_age
+      WITH collect(study_max_age) AS max_ages_per_study, collect(study_min_age) AS min_ages_per_study
+      MATCH (study:study)
+      optional MATCH (participant:participant)
+      SET study.study_ending_year = replace(toString(study.study_ending_year), ' ', '')
+            SET study.study_ending_year = CASE
+            WHEN toLower(trim(toString(study.study_ending_year))) CONTAINS 'ongoing' THEN REPLACE(toLower(trim(toString(study.study_ending_year))),study.study_ending_year, '3000')
+            ELSE study.study_ending_year
+            END
+      RETURN
+        study.study_short_name as study_short_name,
+        max(study.number_of_participants) as number_of_participant_upper_bound,
+        min(study.number_of_participants) as number_of_participant_lower_bound,
+        min(study.enrollment_beginning_year) as enrollment_beginning_year_lower_bound,
+        max(study.enrollment_ending_year) as enrollment_ending_year_upper_bound,
+        min(study.study_beginning_year) as study_beginning_year_lower_bound,
+        max(study.study_ending_year) as study_ending_year_upper_bound,
+        study.participant_minimum_age as participant_minimum_age,
+        study.participant_maximum_age as participant_maximum_age_upper_bound"
+  # study_demographics
+  # Purpose:
+  #   Supplies demographic tab data for the study detail tab
+  #   Build per-study demographic aggregates (race, sex, ethnicity), age-band distributions,
+  #   and summary metadata (enrollment/study years, participant age stats). Used for demographics panels.
+  - index_name: study_demographics
+    type: neo4j
+    # type mapping for each property of the index
+    mapping:
+      study_name:
+        type: keyword
+      study_short_name:
+        type: keyword
+      study_description:
+        type: keyword
+      study_type:
+        type: keyword
+      study_design:
+        type: keyword
+      enrollment_beginning_year:
+        type: integer
+      enrollment_ending_year:
+        type: integer
+      study_beginning_year:
+        type: integer
+      study_ending_year:
+        type: integer
+      biospecimen_collection:
+        type: keyword
+      study_status:
+        type: keyword
+      dbgap_accession_id:
+        type: keyword
+      number_of_participants:
+        type: integer
+      participant_maximum_age:
+        type: integer
+      participant_median_age:
+        type: integer
+      participant_minimum_age:
+        type: integer
+      participant_mean_age:
+        type: integer
+      enrollment_period:
+        type: keyword
+      study_period:
+        type: keyword
+      participant_age_range:
+        type: keyword
+      participant_races:
+        type: nested
+        properties:
+          group:
+            type: keyword
+          subjects:
+            type: integer
+      participant_sexes:
+        type: nested
+        properties:
+          group:
+            type: keyword
+          subjects:
+            type: integer
+      participant_ethnicities:
+        type: nested
+        properties:
+          group:
+            type: keyword
+          subjects:
+            type: integer
+      participant_count_by_age:
+        type: nested
+        properties:
+          group:
+            type: keyword
+          subjects:
+            type: integer
+
+    # Cypher query will be used to retrieve data from Neo4j, and index into Elasticsearch
+    cypher_query: "
+                
+    
+            optional MATCH (study:study)<-[:associated_with]-(participant:participant)
+
+        UNWIND participant.race AS race_raw
+        UNWIND split(toLower(race_raw), '|') AS race_group
+        WITH trim(race_group) as race_group, count(*) AS race_group_count,study
+
+
+        WITH collect(DISTINCT {
+            group: race_group,
+            subjects: race_group_count
+        }) AS participant_races,study
+
+
+       optional MATCH (study)<-[:associated_with]-(participant:participant)
+        UNWIND participant.sex AS sex_raw
+        UNWIND split(toLower(sex_raw), '|') AS sex_group
+        WITH participant_races, trim(sex_group) as sex_group, count(*) AS sex_group_count
+        ,study
+
+
+        WITH participant_races, collect(DISTINCT {
+            group: sex_group,
+            subjects: sex_group_count
+        }) AS participant_sexes,study
+       optional MATCH (study)<-[:associated_with]-(participant:participant)
+        UNWIND participant.ethnicity AS ethnicity_raw
+        UNWIND split(toLower(ethnicity_raw), '|') AS ethnicity_group
+        WITH participant_races, participant_sexes, trim(ethnicity_group) as ethnicity_group, count(*) AS ethnicity_group_count
+        ,study
+          WITH participant_races,participant_sexes,collect(DISTINCT {
+            group: ethnicity_group,
+            subjects: ethnicity_group_count
+        }) AS participant_ethnicities
+        ,study
+
+
+       optional MATCH (study)<-[:associated_with]-(participant:participant)
+
+        WITH toInteger(participant.age_at_enrollment / 365.25) AS age_in_years,participant_races,participant_sexes,participant_ethnicities
+        ,study
+        WITH toInteger(floor(age_in_years / 5) * 5) AS age_band_start, count(*) AS participant_count,participant_races, participant_sexes,participant_ethnicities
+        ,study
+        WITH age_band_start,
+          toInteger(age_band_start) + 4 AS age_band_end,
+          participant_count,
+          participant_races, participant_sexes,participant_ethnicities
+          ,study
+          
+        WITH toString(age_band_start) + ' to ' + toString(age_band_end)  AS age_group_label,participant_count,age_band_start,participant_races, participant_sexes,participant_ethnicities
+        ,study
+        ORDER BY age_group_label
+        optional MATCH (study)<-[:associated_with]-(participant:participant)
+ 
+
+        RETURN
+        collect(DISTINCT{
+                group: age_group_label, 
+                subjects: participant_count
+          }) as participant_count_by_age,
+          participant_races,
+          participant_sexes,
+          participant_ethnicities,
+        study.study_name as study_name,
+              study.study_short_name as study_short_name,
+              study.study_description as study_description,
+              study.study_type as study_type,
+              study.study_design as study_design,
+              toString(study.enrollment_beginning_year) as enrollment_beginning_year,
+              toInteger(study.enrollment_ending_year) as enrollment_ending_year,
+              toInteger(study.enrollment_beginning_year) + ' - ' + toInteger(study.enrollment_ending_year)  as enrollment_period,
+              study.study_beginning_year as study_beginning_year,
+              toInteger(study.study_ending_year) as study_ending_year,
+              toString(study.study_beginning_year) + ' - ' + 
+              CASE 
+                WHEN study.study_ending_year = '3000' THEN 'On Going'
+                ELSE COALESCE(toString(study.study_ending_year), 'On Going')
+              END as study_period,
+              study.biospecimen_collection as biospecimen_collection,
+              study.study_status as study_status,
+              COLLECT(DISTINCT
+               study.dbgap_accession_id
+            ) as dbgap_accession_id,
+
+              toInteger(study.number_of_participants) as number_of_participants,
+
+
+              study.participant_maximum_age as participant_maximum_age,
+              study.participant_mean_age as participant_mean_age,
+              study.participant_median_age as participant_median_age,
+              study.participant_minimum_age as participant_minimum_age,
+              study.participant_minimum_age  + ' - '   + study.participant_maximum_age as participant_age_range
+
+      "
+
+  - index_name: study_cancer_counts
+    type: neo4j
+    # type mapping for each property of the index
+    mapping:
+      study_short_name:
+        type: keyword
+      cancer_diagnosis_disease_morphology_collection:
+        type: nested
+        properties:
+          group:
+            type: keyword
+          group_code:
+            type: keyword
+          subjects:
+            type: keyword
+      cancer_diagnosis_primary_site_collection:
+        type: nested
+        properties:
+          group:
+            type: keyword
+          subjects:
+            type: keyword
+
+    # Cypher query will be used to retrieve data from Neo4j, and index into Elasticsearch
+    cypher_query:
+       " 
+       optional MATCH (study:study)<-[:associated_with]-(participant:participant)
+        WITH count(participant) as cancer_diagnosis_disease_morphology_count,
+        participant.cancer_diagnosis_disease_morphology as cancer_diagnosis_disease_morphology,
+        participant.`ICD-O-3 Code_disease_morphology` as code_morphology,
+        study
+        optional MATCH (study)<-[:associated_with]-(participant:participant)
+        WITH count(participant) as cancer_diagnosis_primary_site_count,
+         participant.cancer_diagnosis_primary_site as cancer_diagnosis_primary_site,
+        cancer_diagnosis_disease_morphology,
+        cancer_diagnosis_disease_morphology_count,
+        study,
+        code_morphology
+        OPTIONAL MATCH (study)<-[:associated_with]-(data_collection:data_collection)
+        RETURN 
+        study.study_short_name as study_short_name,
+        Collect(Distinct{
+          group: cancer_diagnosis_disease_morphology,
+          group_code: code_morphology,
+          subjects: cancer_diagnosis_disease_morphology_count
+        }) as cancer_diagnosis_disease_morphology_collection,
+        Collect(Distinct{
+          group: cancer_diagnosis_primary_site,
+          subjects: cancer_diagnosis_primary_site_count
+        }) as cancer_diagnosis_primary_site_collection  
+        "
+  - index_name: global_stats_bar
+    type: neo4j
+    # type mapping for each property of the index
+    mapping:
+      study_name:
+        type: keyword
+      study_short_name:
+        type: keyword
+      primary_diagnosis_disease_term:
+        type: keyword
+      study_count:
+        type: integer
+      study_description:
+        type: keyword
+      study_type:
+        type: keyword
+      study_design:
+        type: keyword
+      enrollment_beginning_year:
+        type: integer
+      enrollment_ending_year:
+        type: integer
+      enrollment_period:
+        type: keyword
+      study_beginning_year:
+        type: integer
+      study_ending_year:
+        type: integer
+      cancer_type_count:
+        type: integer
+      study_participant_maximum_age:
+        type: integer
+      study_participant_median_age:
+        type: integer
+      study_participant_mean_age:
+        type: integer
+      study_participant_minimum_age:
+        type: integer
+      study_period:
+        type: keyword
+      biospecimen_collection:
+        type: keyword
+      study_status:
+        type: keyword
+      dbgap_accession_id:
+        type: keyword
+      number_of_participants:
+        type: integer
+      data_collection_category:
+        type: keyword
+      study_country:
+        type: keyword
+      study_state_province_territory:
+        type: keyword
+      cancer_diagnosis_primary_site_list:
+        type: keyword
+      sex:
+        type: keyword
+      race:
+        type: keyword
+      ethnicity:
+        type: keyword
+      study_cancer_diagnosis_primary_site_count:
+        type: nested
+        properties:
+          group:
+            type: keyword
+          subjects:
+            type: keyword
+
+   # Cypher query will be used to retrieve data from Neo4j, and index into Elasticsearch
+   # TODO FIX THE DBGAP TO ACCEPT NULL VALUES WITHOUT REPEATING IN A LIST AND CRASHING
+    cypher_query:
+          " 
+          optional MATCH (study:study)<-[:associated_with]-(participant:participant)
+          UNWIND participant.race AS race_raw
+          UNWIND split(toLower(race_raw), '|') AS race_group
+          WITH trim(race_group) AS race_group,study
+
+
+          WITH COLLECT(DISTINCT race_group) as race_group,
+          study
+
+
+         optional MATCH (study)<-[:associated_with]-(participant:participant)
+          UNWIND participant.sex AS sex_raw
+          UNWIND split(toLower(sex_raw), '|') AS sex_group
+             WITH trim(sex_group) AS sex_group
+             ,race_group,study
+             
+
+
+          WITH race_group,study,
+          COLLECT(DISTINCT sex_group) as sex_group
+          
+         
+          optional MATCH (study)<-[:associated_with]-(participant:participant)
+          UNWIND participant.ethnicity AS ethnicity_raw
+          UNWIND split(toLower(ethnicity_raw), '|') AS ethnicity_group
+          WITH  trim(ethnicity_group) as ethnicity_group, collect(DISTINCT study.study_short_name) AS study_count, race_group,
+          sex_group,study
+          
+          
+            WITH 
+          race_group,
+          sex_group,
+          study,
+          COLLECT(DISTINCT ethnicity_group) as ethnicity_group
+          optional MATCH (study)<-[:associated_with]-(country:study_country) 
+          optional MATCH (study)<-[:associated_with]-(state:study_state_province_territory)
+            optional MATCH (study)<-[:associated_with]-(neoplasm:primary_diagnosis)
+             OPTIONAL MATCH (study)<-[:associated_with]-(data_collection:data_collection)
+              WHERE toInteger(data_collection.data_collection_category_annotation_count) <> 0 and data_collection.data_collection_category_annotation_count is not null
+           SET study.study_ending_year = replace(toString(study.study_ending_year), ' ', '')
+            SET study.study_ending_year = CASE
+            WHEN toLower(trim(toString(study.study_ending_year))) CONTAINS 'ongoing' THEN REPLACE(toLower(trim(toString(study.study_ending_year))),study.study_ending_year, '3000')
+            ELSE study.study_ending_year
+            END
+          RETURN
+          
+            study.study_name as study_name,
+                study.study_short_name as study_short_name,
+                study.cancer_diagnosis_primary_site_count as cancer_type_count,
+                count(distinct(study.study_short_name)) as study_count,
+                study.study_description as study_description,
+                study.study_type as study_type,
+                study.study_design as study_design,
+                study.cancer_diagnosis_primary_site_list as cancer_diagnosis_primary_site_list,
+                Collect(distinct(neoplasm.primary_diagnosis_disease_term)) as primary_diagnosis_disease_term,
+                toString(study.enrollment_beginning_year) as enrollment_beginning_year,
+                toInteger(study.enrollment_ending_year) as enrollment_ending_year,
+                toInteger(study.enrollment_beginning_year) + ' - ' + toInteger(study.enrollment_ending_year)  as enrollment_period,
+                toInteger(study.study_beginning_year) as study_beginning_year,
+                toInteger(study.study_ending_year) as study_ending_year,
+                study.participant_maximum_age as study_participant_maximum_age,
+                study.participant_mean_age as study_participant_mean_age,
+                study.participant_median_age as study_participant_median_age,
+                study.participant_minimum_age as study_participant_minimum_age,
+                COLLECT(DISTINCT(data_collection.data_collection_category)) as data_collection_category,
+                toInteger(study.number_of_participants) as number_of_participants,
+                toString(study.study_beginning_year) + ' - ' + 
+                CASE 
+                  WHEN study.study_ending_year = '3000' THEN 'On Going'
+                  ELSE COALESCE(toString(study.study_ending_year), 'On Going')
+                END as study_period, 
+                study.biospecimen_collection as biospecimen_collection,
+                study.study_status as study_status,
+                COLLECT(DISTINCT
+                study.dbgap_accession_id
+            ) as dbgap_accession_id,
+                Collect(distinct(country.study_country)) as study_country,
+                Collect(distinct(state.study_state_province_territory)) as  study_state_province_territory,
+                ethnicity_group as ethnicity,
+                race_group as race,
+                sex_group as sex,
+                collect(DISTINCT{
+                group: study.study_short_name, 
+                subjects: study.cancer_diagnosis_primary_site_count
+          }) as study_cancer_diagnosis_primary_site_count
+     "
+  - index_name: data_volume_query
+    type: neo4j
+    # type mapping for each property of the index
+    mapping:
+      study_short_name:
+        type: keyword
+      study_type:
+        type: keyword
+      study_design:
+        type: keyword
+      biospecimen_collection:
+        type: keyword
+      data_file_uuid:
+        type: keyword
+      data_file_checksum_value:
+        type: keyword
+      data_volume:
+        type: float
+      data_file_name:
+        type: keyword
+      data_file_type:
+        type: keyword
+      data_file_access_control:
+        type: keyword
+      data_file_description:
+        type: keyword
+      data_file_format:
+        type: keyword
+      data_file_compression_status:
+        type: keyword
+      drs_uri:
+        type: keyword
+      number_of_participants:
+        type: integer
+      data_collection_category:
+        type: keyword
+      enrollment_beginning_year:
+        type: keyword
+      enrollment_ending_year:
+        type: keyword
+      study_ending_year:
+        type: keyword
+      study_beginning_year:
+        type: keyword
+      data_file_signed_url:
+        type: keyword
+      study_status:
+        type: keyword
+      study_country:
+        type: keyword
+      study_state_province_territory:
+        type: keyword
+      cancer_diagnosis_primary_site_list:
+        type: keyword
+      study_participant_maximum_age:
+        type: integer
+      study_participant_mean_age:
+        type: integer
+      study_participant_median_age:
+        type: integer
+      study_participant_minimum_age:
+        type: integer
+      sex:
+        type: keyword
+      race:
+        type: keyword
+      ethnicity:
+        type: keyword
+         #    - UNWIND participant.race
+      #    - split pipe-delimited values, normalize and trim
+      #    - Collect them as a list for the front end to interpret
+      #     this is done for sex, ethnicity and races
+    cypher_query: "
+          optional MATCH (study:study)<-[:associated_with]-(participant:participant)
+          UNWIND participant.race AS race_raw
+          UNWIND split(toLower(race_raw), '|') AS race_group
+          WITH trim(race_group) AS race_group,study
+
+
+          WITH COLLECT(DISTINCT race_group) as race_group,
+          study
+
+
+          optional MATCH (study)<-[:associated_with]-(participant:participant)
+          UNWIND participant.sex AS sex_raw
+          UNWIND split(toLower(sex_raw), '|') AS sex_group
+             WITH trim(sex_group) AS sex_group
+             ,race_group,study
+             
+
+
+          WITH race_group,study,
+          COLLECT(DISTINCT sex_group) as sex_group
+          
+         
+          optional MATCH (study)<-[:associated_with]-(participant:participant)
+          UNWIND participant.ethnicity AS ethnicity_raw
+          UNWIND split(toLower(ethnicity_raw), '|') AS ethnicity_group
+          WITH  trim(ethnicity_group) as ethnicity_group, collect(DISTINCT study.study_short_name) AS study_count, race_group,
+          sex_group,study
+          
+          
+            WITH 
+          race_group,
+          sex_group,
+          study,
+          COLLECT(DISTINCT ethnicity_group) as ethnicity_group
+      OPTIONAL MATCH (study)<-[:associated_with]-(data:data_file)
+      OPTIONAL MATCH (study)<-[:associated_with]-(data_collection:data_collection)
+      WHERE toInteger(data_collection.data_collection_category_annotation_count) <> 0 and data_collection.data_collection_category_annotation_count is not null
+      optional MATCH (study)<-[:associated_with]-(country:study_country)
+      optional MATCH (study)<-[:associated_with]-(state:study_state_province_territory)
+
+      SET study.study_ending_year = replace(toString(study.study_ending_year), ' ', '')
+      SET study.study_ending_year = CASE
+      WHEN toLower(trim(toString(study.study_ending_year))) CONTAINS 'ongoing' THEN REPLACE(toLower(trim(toString(study.study_ending_year))),study.study_ending_year, '3000')
+      ELSE study.study_ending_year
+      END
+      RETURN
+
+      study.study_short_name as study_short_name,
+      study.study_type as study_type,
+      study.study_design as study_design,
+      study.biospecimen_collection as biospecimen_collection,
+      data.data_file_uuid as data_file_uuid,
+      data.data_file_checksum_value as data_file_checksum_value,
+      data.data_file_size as data_volume,
+      data.data_file_name as data_file_name,
+      data.data_file_type as data_file_type,
+      data.data_file_signed_url as data_file_signed_url,
+      data.data_file_access_control as data_file_access_control,
+      data.data_file_description as data_file_description,
+      data.data_file_format as data_file_format,
+      data.data_file_compression_status as data_file_compression_status,
+      'drs://nci-crdc-staging.datacommons.io/dg.4DFC/' + data.data_file_uuid AS drs_uri,
+      toInteger(study.number_of_participants) as number_of_participants,
+      COLLECT(DISTINCT(data_collection.data_collection_category)) as data_collection_category,
+      study.enrollment_beginning_year as enrollment_beginning_year,
+      study.enrollment_ending_year as enrollment_ending_year,
+      study.participant_maximum_age as study_participant_maximum_age,
+      study.participant_mean_age as study_participant_mean_age,
+      study.participant_median_age as study_participant_median_age,
+      study.participant_minimum_age as study_participant_minimum_age,
+      study.study_ending_year as study_ending_year,
+      study.study_beginning_year as study_beginning_year,
+      study.study_status as study_status,
+      study.cancer_diagnosis_primary_site_list as cancer_diagnosis_primary_site_list,
+      Collect(distinct(country.study_country)) as study_country,
+      Collect(distinct(state.study_state_province_territory)) as study_state_province_territory,
+      ethnicity_group as ethnicity,
+      race_group as race,
+      sex_group as sex  
+       "
+  # study_tab
+  # Purpose:
+  #   Main study-level index used for tabular study listings. Combines participant breakdowns,
+  #   study metadata, data collection category counts and file UUIDs for display and filtering.
+  - index_name: study_tab
+    type: neo4j
+    mapping:
+      study_name:
+        type: keyword
+      study_short_name:
+        type: keyword
+      study_description:
+        type: keyword
+      study_type:
+        type: keyword
+      study_design:
+        type: keyword
+      study_participant_maximum_age:
+        type: integer
+      study_participant_mean_age:
+        type: integer
+      study_participant_median_age:
+        type: integer
+      study_participant_minimum_age:
+        type: integer
+      number_of_participants:
+        type: integer
+      cancer_diagnosis_primary_site_list:
+        type: keyword
+      participant_races:
+        type: nested
+        properties:
+          group:
+            type: keyword
+          subjects:
+            type: integer
+      participant_sexes:
+        type: nested
+        properties:
+          group:
+            type: keyword
+          subjects:
+            type: integer
+      participant_ethnicities:
+        type: nested
+        properties:
+          group:
+            type: keyword
+          subjects:
+            type: integer
+      sex:
+        type: keyword
+      race:
+        type: keyword
+      ethnicity:
+        type: keyword
+      enrollment_beginning_year:
+        type: keyword
+      enrollment_ending_year:
+        type: keyword
+      enrollment_period:
+        type: keyword
+      participant_age_range:
+        type: keyword
+      primary_diagnosis_disease_count:
+        type: integer
+      study_beginning_year:
+        type: keyword
+      study_ending_year:
+        type: keyword
+      study_period:
+        type: keyword
+      biospecimen_collection:
+        type: keyword
+      study_status:
+        type: keyword
+      dbgap_accession_id:
+        type: keyword
+      study_country:
+        type: keyword
+      number_of_countries:
+        type: keyword
+      study_state_province_territory:
+        type: keyword
+      number_of_states_provinces_territories:
+        type: keyword
+      data_collection_category:
+        type: keyword
+      data_collection:
+        type: nested
+        properties:
+          data_collection_category:
+            type: keyword
+          data_collection_category_annotation_count:
+            type: integer
+      data_file_uuid:
+        type: keyword
+
+      #    - UNWIND participant.race
+      #    - split pipe-delimited values, normalize and trim
+      #    - count tokens per study and collect as participant_races
+      #     this is done for sex, ethnicity and races
+    cypher_query: "
+           optional MATCH (study:study)<-[:associated_with]-(participant:participant) 
+          UNWIND participant.race AS race_raw
+          UNWIND split(toLower(race_raw), '|') AS race_group
+          WITH trim(race_group) as race_group, count(*) AS race_group_count,study
+          WITH collect(DISTINCT {
+              group: race_group,
+              subjects: race_group_count
+          }) AS participant_races,study, Collect(DISTINCT race_group) as race_group
+          optional MATCH (study)<-[:associated_with]-(participant:participant)
+          UNWIND participant.sex AS sex_raw
+          UNWIND split(toLower(sex_raw), '|') AS sex_group
+          WITH participant_races, trim(sex_group) as sex_group, count(*) AS sex_group_count,study,race_group
+          WITH participant_races, collect(DISTINCT {
+              group: sex_group,
+              subjects: sex_group_count
+          }) AS participant_sexes,study,race_group,Collect(DISTINCT sex_group) as sex_group
+          optional MATCH (study)<-[:associated_with]-(participant:participant)
+          UNWIND participant.ethnicity AS ethnicity_raw
+          UNWIND split(toLower(ethnicity_raw), '|') AS ethnicity_group
+          WITH participant_races, participant_sexes, trim(ethnicity_group) as ethnicity_group, count(*) AS ethnicity_group_count,study,sex_group,race_group
+          WITH participant_races,participant_sexes,collect(DISTINCT {
+              group: ethnicity_group,
+              subjects: ethnicity_group_count
+          }) AS participant_ethnicities,study,sex_group,race_group,Collect(DISTINCT ethnicity_group) as ethnicity_group
+          OPTIONAL MATCH (study)<-[:associated_with]-(data_collection:data_collection)
+          WITH study, participant_races, participant_sexes, participant_ethnicities, sex_group, race_group, ethnicity_group,
+        CASE 
+          WHEN data_collection IS NULL THEN 0
+          WHEN data_collection.data_collection_category_annotation_count IS NULL THEN 0
+          WHEN toString(data_collection.data_collection_category_annotation_count) IN ['nan', 'NaN', 'null', '', 'NULL'] THEN 0
+          WHEN toInteger(data_collection.data_collection_category_annotation_count) <= 0 THEN 0
+          ELSE toInteger(data_collection.data_collection_category_annotation_count)
+        END as valid_count,
+        data_collection
+          OPTIONAL MATCH (study)<-[:associated_with]-(study_person:study_personnel)
+          OPTIONAL MATCH (study)<-[:associated_with]-(data:data_file)
+          OPTIONAL MATCH (study)<-[:associated_with]-(country:study_country)
+          OPTIONAL MATCH (study)<-[:associated_with]-(state:study_state_province_territory)
+          SET study.study_ending_year = replace(toString(study.study_ending_year), ' ', '')
+          SET study.study_ending_year = CASE
+            WHEN toLower(trim(study.study_ending_year)) CONTAINS 'ongoing' THEN REPLACE(toLower(trim(study.study_ending_year)),study.study_ending_year, '3000')
+            ELSE study.study_ending_year
+          END
+          RETURN 
+            study.study_name as study_name,
+            study.study_short_name as study_short_name,
+            study.study_description as study_description,
+            study.study_type as study_type,
+            study.study_design as study_design,
+            study.participant_maximum_age as study_participant_maximum_age,
+            study.participant_mean_age as study_participant_mean_age,
+            study.participant_median_age as study_participant_median_age,
+            study.participant_minimum_age as study_participant_minimum_age,
+            toInteger(study.number_of_participants) as number_of_participants,
+            study.participant_minimum_age  + ' - '   + study.participant_maximum_age as participant_age_range,
+            study.cancer_diagnosis_primary_site_list as cancer_diagnosis_primary_site_list,
+            toString(study.study_beginning_year) + ' - ' + 
+            CASE 
+              WHEN study.study_ending_year = '3000' THEN 'On Going'
+              ELSE COALESCE(toString(study.study_ending_year), 'On Going')
+            END as study_period,
+            participant_races,
+            participant_sexes,
+            participant_ethnicities,
+            ethnicity_group as ethnicity,
+            race_group as race,
+            sex_group as sex,
+            toInteger(study.enrollment_beginning_year) as enrollment_beginning_year,
+            toInteger(study.enrollment_ending_year) as enrollment_ending_year,
+            toString(toInteger(study.enrollment_beginning_year)) + ' - ' +  toString(toInteger(study.enrollment_ending_year))  as enrollment_period,
+            study.study_beginning_year as study_beginning_year,
+            toInteger(study.study_ending_year) as study_ending_year,
+            study.biospecimen_collection as biospecimen_collection,
+            study.study_status as study_status,
+            COLLECT(DISTINCT
+              study.dbgap_accession_id
+            ) as dbgap_accession_id,
+            Collect(distinct(country.study_country)) as study_country,
+            count(Distinct(country.study_country)) as number_of_countries,
+            Collect(distinct(state.study_state_province_territory)) as study_state_province_territory,
+            count(distinct(state)) as number_of_states_provinces_territories,
+            Collect(DiSTINCT(data_collection.data_collection_category)) as data_collection_category,
+            collect(Distinct{
+            data_collection_category:data_collection.data_collection_category,
+            data_collection_category_annotation_count:valid_count}) as data_collection,
+            study.cancer_diagnosis_primary_site_count as primary_diagnosis_disease_count,
+            COLLECT(DISTINCT(data.data_file_uuid)) as data_file_uuid     "
+  - index_name: study_overview
+    type: neo4j
+    # type mapping for each property of the index
+    # this was a legacy query
+    mapping:
+      study_short_name:
+        type: keyword
+      personnel:
+        type: nested
+        properties:
+          person_first_name:
+            type: keyword
+          person_last_name:
+            type: keyword
+          institution:
+            type: keyword
+          person_role:
+            type: keyword
+      publication:
+        type: nested
+        properties:
+          authorship:
+            type: keyword
+          publication_title:
+            type: keyword
+          year_of_publication:
+            type: keyword
+          journal_citation:
+            type: keyword
+          digital_object_id:
+            type: keyword
+          pubmed_id:
+            type: keyword
+          publication_record_id:
+            type: keyword
+      associated_links:
+        type: nested
+        properties:
+          associated_link_name:
+            type: keyword
+          associated_link_record_id:
+            type: keyword
+          associated_link_url:
+            type: keyword
+    # Cypher query will be used to retrieve data from Neo4j, and index into Elasticsearch
+    cypher_query: "
+      MATCH (study:study)
+      OPTIONAL MATCH (study)<-[:associated_with]-(study_person:study_personnel)
+      OPTIONAL MATCH (study)<-[:associated_with]-(study_pub:publication)
+      OPTIONAL MATCH (study)<-[:associated_with]-(links:associated_link)
+      RETURN 
+      study.study_short_name as study_short_name,
+      Collect(DISTINCT{
+        person_first_name: study_person.person_first_name,
+        person_last_name: study_person.person_last_name,
+        person_role: study_person.person_role,
+        institution: study_person.person_institution
+       }) as personnel,
+       Collect(DISTINCT{
+        authorship: study_pub.authorship,
+        publication_title: study_pub.publication_title,
+        year_of_publication: study_pub.year_of_publication,
+        journal_citation: study_pub.journal_citation,
+        digital_object_id:study_pub.digital_object_id,
+        publication_record_id:study_pub.publication_record_id
+       }) as publication,
+        Collect(DISTINCT{
+        associated_link_name: links.associated_link_name,
+        associated_link_record_id: links.associated_link_record_id,
+        associated_link_url: links.associated_link_url
+       }) as associated_links
+      "
+  - index_name: data_collection
+    type: neo4j
+  # type mapping for each property of the index
+  # This was a legacy query
+    mapping:
+      study_short_name:
+        type: keyword
+      data_collection:
+        type: nested
+        properties:
+          data_collection_category:
+            type: keyword
+          data_collection_category_annotation_count:
+            type: integer
+    cypher_query:
+      "
+      MATCH (study:study)
+      OPTIONAL MATCH (study)<-[:associated_with]-(data_collection:data_collection) 
+      RETURN
+      study.study_short_name as study_short_name,
+      Collect(Distinct{
+      data_collection_category:data_collection.data_collection_category,
+      data_collection_category_annotation_count:toInteger(data_collection.data_collection_category_annotation_count)
+      }) as data_collection
+      "
+
+  

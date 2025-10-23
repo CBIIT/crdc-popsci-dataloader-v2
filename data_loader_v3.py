@@ -9,19 +9,26 @@ import sys
 import platform
 import subprocess
 import json
-import pandas as pd
-import datetime
-import dateutil
+import time
 from timeit import default_timer as timer
-from bento.common.utils import get_host, DATETIME_FORMAT, reformat_date, get_time_stamp
+from bento.common.utils import get_host, DATETIME_FORMAT, reformat_date
 
 from neo4j import Driver
+import pandas as pd
+import numpy as np
+from datetime import date
 
-from icdc_schema import ICDC_Schema, is_parent_pointer
+from cancer_translation_func import get_cancer_translations, get_cancer_translations_list, convert_codes
+
+from icdc_schema import ICDC_Schema, is_parent_pointer, get_list_values
 from bento.common.utils import get_logger, NODES_CREATED, RELATIONSHIP_CREATED, UUID, \
-    RELATIONSHIP_TYPE, MULTIPLIER, ONE_TO_ONE, DEFAULT_MULTIPLIER, UPSERT_MODE, \
-    NEW_MODE, DELETE_MODE, NODES_DELETED, RELATIONSHIP_DELETED, NODES_UPDATED, combined_dict_counters, \
-    MISSING_PARENT, NODE_LOADED, get_string_md5
+    RELATIONSHIP_TYPE, MULTIPLIER, ONE_TO_ONE, UPSERT_MODE, \
+    NEW_MODE, DELETE_MODE, NODES_DELETED, RELATIONSHIP_DELETED, combined_dict_counters, \
+    MISSING_PARENT, get_string_md5  # DEFAULT_MULTIPLIER,  NODE_LOADED   #these libraries are not used
+
+# import aiobotocore
+# profile_session = aiobotocore.session.AioSession(profile='Popsci_Dev')
+# s3_reader = s3fs.S3FileSystem(session=profile_session)
 
 NODE_TYPE = 'type'
 PROP_TYPE = 'Type'
@@ -38,8 +45,8 @@ INT_NODE_CREATED = 'int_node_created'
 PROVIDED_PARENTS = 'provided_parents'
 RELATIONSHIP_PROPS = 'relationship_properties'
 BATCH_SIZE = 1000
-OTHER = '__other__'
-csv.field_size_limit(sys.maxsize)
+ID_FUNC = 'elementID'
+
 
 def get_btree_indexes(session):
     """
@@ -54,6 +61,7 @@ def get_btree_indexes(session):
         if r["type"] == "BTREE":
             indexes.add(format_as_tuple(r["labelsOrTypes"][0], r["properties"]))
     return indexes
+
 
 def format_as_tuple(node_name, properties):
     """
@@ -140,7 +148,7 @@ def get_props_signature(props):
 
 
 class DataLoader:
-    def __init__(self, driver, schema, plugins=None):
+    def __init__(self, driver, schema, database_name, conversion_files, plugins=None):
         if plugins is None:
             plugins = []
         if not schema or not isinstance(schema, ICDC_Schema):
@@ -148,7 +156,9 @@ class DataLoader:
         self.log = get_logger('Data Loader')
         self.driver = driver
         self.schema = schema
+        self.db_name = database_name
         self.rel_prop_delimiter = self.schema.rel_prop_delimiter
+        self.wipe_timer = 0
 
         if plugins:
             for plugin in plugins:
@@ -166,7 +176,6 @@ class DataLoader:
                     raise ValueError('Invalid Plugin!')
         self.plugins = plugins
         self.nodes_created = 0
-        self.nodes_updated = 0
         self.relationships_created = 0
         self.indexes_created = 0
         self.nodes_deleted = 0
@@ -175,10 +184,64 @@ class DataLoader:
         self.relationships_stat = {}
         self.nodes_deleted_stat = {}
         self.relationships_deleted_stat = {}
-        self.validation_result_file_key = ""
-        self.df_validation_dict = {}
-        self.skip_validation_flag = False
-        self.cheat_mode = True
+
+        # if no icd-O codes in file then convertsion file will be empty and not read this part
+        if 'location' in conversion_files:
+            self.schema.location_codes = get_cancer_translations_list(conversion_files["location"])
+        if 'histology' in conversion_files:
+            self.schema.histology_codes = get_cancer_translations(conversion_files["histology"])
+
+    def get_schema_data(self, tx, query):
+        result = tx.run(query)
+        data_list = [i for i in result.data()]
+        return data_list
+
+    def get_data(self, tx, query, obj_data, batch_size):
+        result = tx.run(query, batch=obj_data)
+        return result.data()
+
+    def get_schema_indexes(self, create_type):
+        start = timer()
+        self.node_keys_dict = dict()
+        with self.driver.session(database=self.db_name) as session:
+            query = 'SHOW INDEXES'
+            records = session.execute_read(self.get_schema_data, query)
+            for record in records:
+                if (record['labelsOrTypes'] is not None):
+                    self.node_keys_dict[record['labelsOrTypes'][0]] = {'Primary ID': record['properties'][0],
+                                                                       'Node_Index_DF':  pd.DataFrame(columns=['Node_ID', 'Primary_Key_Value'])}
+
+            file_size = 0
+            for curr_node in self.node_keys_dict:
+                if self.node_keys_dict[curr_node]['Primary ID'] == 'None':
+                    continue
+                query = f"MATCH (n:{curr_node}) RETURN {ID_FUNC}(n) as Node_ID, n.{self.node_keys_dict[curr_node]['Primary ID']} as Primary_Key_Value"
+                records = session.execute_read(self.get_schema_data, query)
+
+                self.log.info(f"{curr_node} has {len(records)} nodes found in database")
+                if len(records) > 0:
+                    data_res = pd.DataFrame(records)
+                    self.node_keys_dict[curr_node]['Node_Index_DF'] = pd.concat([self.node_keys_dict[curr_node]['Node_Index_DF'], data_res])
+                    file_size = file_size + len(data_res)
+
+        self.log.info(' ')
+        end = timer()
+        self.create_dict_timer = end - start
+        self.log.info('{0} Index Dictionary ({2}) nodes) took: {1:.2f} seconds'.format(create_type, end - start, file_size))
+
+    def update_indexs_with_new(self):
+        dict_timer = timer()
+        today = date.today()
+        for curr_node in self.node_keys_dict:
+            new_nodes = """MATCH (n:curr_node) where date(n.created) = """
+            new_nodes += """date({year: """ + f"{today.year}, month: {today.month}, day: {today.day}"
+            new_nodes += """}) RETURN """ + f"n.{self.node_keys_dict[curr_node]['Primary ID']} as Primary_Key_Value, {ID_FUNC}(n) as Node_ID"
+            new_nodes = new_nodes.replace("curr_node", curr_node)
+            with self.driver.session(database=self.db_name) as session:
+                records = session.execute_read(self.get_schema_data, new_nodes)
+            x = pd.concat([self.node_keys_dict[curr_node]['Node_Index_DF'], pd.DataFrame(records)])
+            self.node_keys_dict[curr_node]['Node_Index_DF'] = x.drop_duplicates()
+        self.update_dict_timer = timer() - dict_timer
 
     def check_files(self, file_list):
         if not file_list:
@@ -191,86 +254,31 @@ class DataLoader:
                     return False
             return True
 
-    def validate_delete_files(self, file_list):
-        validation_result = True
-        try:
-            with self.driver.session() as session:
-                for txt in file_list:
-                    file_encoding = check_encoding(txt)
-                    with open(txt, encoding=file_encoding) as in_file:
-                        reader = csv.DictReader(in_file, delimiter='\t')
-                        line_number = 1
-                        for org_obj in reader:
-                            line_number += 1
-                            obj = self.cleanup_node(org_obj)
-                            id_field = self.schema.get_id_field(obj)
-                            if id_field not in obj.keys():
-                                self.log.error(f'Line: {line_number}: Required id field {id_field} is missing, validation failed')
-                                return False
-                            elif obj[id_field] is None:
-                                self.log.error(f'Line: {line_number}: Required id field {id_field} is None, validation failed')
-                                return False
-                            if NODE_TYPE not in obj.keys():
-                                self.log.error(f'Line: {line_number}: Required node type field {NODE_TYPE} is missing, validation failed')
-                                return True
-                            elif obj[NODE_TYPE] is None:
-                                self.log.error(f'Line: {line_number}: Required node type field {NODE_TYPE} is None, validation failed')
-                                return False
-                            node_type = obj.get(NODE_TYPE, None)
-                            if not self.node_exists(session, node_type, id_field, obj[id_field]):
-                                self.log.error(f'Line: {line_number}: The node to be deleted (:{obj[NODE_TYPE]} {{{id_field}: "{obj[id_field]}"}}) not found in DB!, validation failed')
-                                validation_result = False
-                            
-        except Exception as e:
-            self.log.error(e)
-            self.log.error("Delete file validation failed, abort the deletion")
-            sys.exit(1)
-        return validation_result
-
-
-    def validate_files(self, cheat_mode, loading_mode, file_list, max_violations, temp_folder, verbose):
+    def validate_files(self, cheat_mode, file_list, max_violations):
         if not cheat_mode:
-            if loading_mode != DELETE_MODE:
-                self.cheat_mode = False
-                validation_failed = False
-                output_key_invalid = ""
-                for txt in file_list:
-                    validate_result = self.validate_file(txt, max_violations, verbose)
-                    if not validate_result:
-                        self.log.error('Validating file "{}" failed!'.format(txt))
-                        validation_failed = True
-                if validation_failed:
-                    if not os.path.exists(temp_folder):
-                        os.makedirs(temp_folder)
-                    df_validation_result_file_key = os.path.basename(os.path.dirname(file_list[0]))
-                    timestamp = get_time_stamp()
-                    output_key_invalid = os.path.join(temp_folder, df_validation_result_file_key) + "_" + timestamp + ".xlsx"
-                    #df_validation_result.to_csv(output_key_invalid, index=False)
-                    writer=pd.ExcelWriter(output_key_invalid, engine='xlsxwriter', engine_kwargs={'options':{'strings_to_urls': False}})
-                    for key in self.df_validation_dict.keys():
-                        sheet_name_new = key
-                        self.df_validation_dict[key].to_excel(writer,sheet_name=sheet_name_new, index=False)
-                    writer.close()
-
-                self.validation_result_file_key = output_key_invalid
-                return not validation_failed
-            elif loading_mode == DELETE_MODE:
-                self.log.info("Start validation the delete file.")
-                validation_result = self.validate_delete_files(file_list)
-                if validation_result:
-                    self.log.info("Passed all delete file validation.")
-                return validation_result
+            validation_failed = False
+            for txt in file_list:
+                if not self.validate_file(txt, max_violations):
+                    self.log.error('Validating file "{}" failed!'.format(txt))
+                    validation_failed = True
+            return not validation_failed
         else:
             self.log.info('Cheat mode enabled, all validations skipped!')
             return True
 
-    def load(self, file_list, cheat_mode, dry_run, loading_mode, wipe_db, max_violations, temp_folder, verbose,
+    def get_neo4j_version(self, tx):
+        # Use the dbms.components() procedure to get server details
+        result = tx.run("CALL dbms.components() YIELD name, versions, edition "
+                        "UNWIND versions AS version RETURN name, version, edition;")
+        return result.single()
+
+    def load(self, file_list, cheat_mode, dry_run, loading_mode, wipe_db, max_violations,
              split=False, no_backup=True, backup_folder="/", neo4j_uri=None):
-        if not self.check_files(file_list):
-            return False
+        # if not self.check_files(file_list):
+        #    return False
         start = timer()
-        if not self.validate_files(cheat_mode, loading_mode, file_list, max_violations, temp_folder, verbose):
-            return False
+        # if not self.validate_files(cheat_mode, file_list, max_violations):
+        #    return False
         if not no_backup and not dry_run:
             if not neo4j_uri:
                 self.log.error('No Neo4j URI specified for backup, abort loading!')
@@ -288,23 +296,37 @@ class DataLoader:
             return {NODES_CREATED: 0, RELATIONSHIP_CREATED: 0}
 
         self.nodes_created = 0
-        self.nodes_updated = 0
         self.relationships_created = 0
         self.indexes_created = 0
         self.nodes_deleted = 0
         self.relationships_deleted = 0
         self.nodes_stat = {}
-        self.nodes_stat_updated = {}
         self.relationships_stat = {}
         self.nodes_deleted_stat = {}
         self.relationships_deleted_stat = {}
-        self.cheat_mode = True
         if not self.driver or not isinstance(self.driver, Driver):
             self.log.error('Invalid Neo4j Python Driver!')
             return False
         # Data updates and schema related updates cannot be performed in the same session so multiple will be created
         # Create new session for schema related updates (index creation)
+
+        self.log.info("  ")
+        self.log.info(f"Database name being used is: {self.db_name} ")
+        self.log.info("  ")
+
         with self.driver.session() as session:
+            server_info = session.execute_read(self.get_neo4j_version)
+            if server_info:
+                self.log.info(f"Neo4j Version: {server_info['version']}")  # Extract the version from the result
+                self.log.info(f"Neo4j Edition: {server_info['edition']}")  # Extract the edition
+            else:
+                self.log.error("Could not retrieve server information.")
+            self.log.info("  ")
+        if int(server_info['version'][0]) == 4:  # if neo4j database is v5 or higher use element id
+            global ID_FUNC
+            ID_FUNC = 'ID'
+
+        with self.driver.session(database=self.db_name) as session:
             tx = session.begin_transaction()
             try:
                 self.create_indexes(tx)
@@ -313,23 +335,19 @@ class DataLoader:
                 tx.rollback()
                 self.log.exception(e)
                 return False
-        # Create new session for data related updates
-        with self.driver.session() as session:
-            # Split Transactions enabled
-            if split:
-                self._load_all(session, file_list, loading_mode, split, wipe_db)
 
-            # Split Transactions Disabled
-            else:
-                # Data updates transaction
-                tx = session.begin_transaction()
-                try:
-                    self._load_all(tx, file_list, loading_mode, split, wipe_db)
-                    tx.commit()
-                except Exception as e:
-                    tx.rollback()
-                    self.log.exception(e)
-                    return False
+        # Create new session for data related updates
+        with self.driver.session(database=self.db_name) as session:
+            tx = session.begin_transaction()
+            try:
+                self._load_all(session, tx, file_list, loading_mode, split, wipe_db)
+            except Exception as e:
+                tx.rollback()
+                self.log.exception(e)
+                return False
+
+        if session:
+            session.close()
 
         # End the timer
         end = timer()
@@ -337,51 +355,120 @@ class DataLoader:
         # Print statistics
         for plugin in self.plugins:
             combined_dict_counters(self.nodes_stat, plugin.nodes_stat)
-            combined_dict_counters(self.nodes_stat_updated, plugin.nodes_stat_updated)
             combined_dict_counters(self.relationships_stat, plugin.relationships_stat)
             self.nodes_created += plugin.nodes_created
-            self.nodes_updated += plugin.nodes_updated
             self.relationships_created += plugin.relationships_created
-        for node in sorted(self.nodes_stat.keys()):
-            count = self.nodes_stat[node]
-            update_count = self.nodes_stat_updated[node]
-            self.log.info('Node: (:{}) loaded: {}'.format(node, count))
-            self.log.info('Node: (:{}) updated: {}'.format(node, update_count))
-        for rel in sorted(self.relationships_stat.keys()):
-            count = self.relationships_stat[rel]
-            self.log.info('Relationship: [:{}] loaded: {}'.format(rel, count))
-        self.log.info('{} new indexes created!'.format(self.indexes_created))
-        self.log.info('{} nodes and {} relationships loaded!'.format(self.nodes_created, self.relationships_created))
-        self.log.info('{} nodes and {} relationships deleted!'.format(self.nodes_deleted, self.relationships_deleted))
-        self.log.info('{} nodes updated!'.format(self.nodes_updated, self.relationships_deleted))
-        self.log.info('Loading time: {:.2f} seconds'.format(end - start))  # Time in seconds, e.g. 5.38091952400282
         return {NODES_CREATED: self.nodes_created, RELATIONSHIP_CREATED: self.relationships_created,
-                NODES_DELETED: self.nodes_deleted, RELATIONSHIP_DELETED: self.relationships_deleted, NODES_UPDATED: self.nodes_updated}
+                NODES_DELETED: self.nodes_deleted, RELATIONSHIP_DELETED: self.relationships_deleted}
 
-    def _load_all(self, tx, file_list, loading_mode, split, wipe_db):
+    def _load_all(self, session, tx, file_list, loading_mode, split, wipe_db):
         if wipe_db:
-            self.wipe_db(tx, split)
+            self.wipe_db(session)   # deletes all node in db
+            try:
+                tx2 = session.begin_transaction()
+                self.create_indexes(tx2)
+                tx.commit()
+            except Exception as e:
+                tx2.rollback()
+                self.log.exception(e)
+                return False
+
+        self.load_passed = 0
+        self.load_failed = 0
+        self.relationship_passed = 0
+        self.relationship_failed = 0
+
+        # call create index after the wipe database (if was called)
+        self.log.info(' ')
+        self.log.info('Mapping index values to primary keys ')
+        self.get_schema_indexes("Creating")   # create a dictionary that maps the current neo4j database as defined by self.db_name
+
+        self.log.info(' ')
+        processed_files = []
+        load_start_time = time.perf_counter()
+
+        file_dict = {}
         for txt in file_list:
-            self.load_nodes(tx, txt, loading_mode, split)
-        if loading_mode != DELETE_MODE:
-            for txt in file_list:
-                self.load_relationships(tx, txt, loading_mode, split)
+            if txt[:2] == "s3":  # files get loaded directly from S3
+                file_data = pd.read_csv(txt, sep='\t', header=0, encoding='windows-1252', storage_options={"profile": 'Popsci_Dev'})
+            else:  # files are loaded from local
+                file_data = pd.read_csv(txt, sep='\t', header=0, encoding='windows-1252')
+
+            file_data.columns = [i.strip() for i in file_data.columns]
+            try:
+                file_data = file_data.query("type == type")  # remove blank lines in file
+            except Exception as e:
+                print(e)
+            file_type = list(set(file_data["type"]))[0]
+            if file_type not in file_dict.keys():
+                file_dict[file_type] = file_data
+            else:
+                file_dict[file_type] = pd.concat([file_data, file_dict[file_type]])
+
+        for txt in file_dict:
+            if loading_mode != DELETE_MODE:
+                new_nodes, updated_nodes, all_obj_list = self.load_nodes(session, tx, txt, file_dict, loading_mode, wipe_db, split)
+                processed_files.append(all_obj_list)
+
+        self.load_node_time = time.perf_counter()-load_start_time
+        self.log.info(f"Number of Nodes Created / Updated: {self.load_passed}, Nodes Failed: {self.load_failed}")
+        self.log.info(f"Total Loading time for all nodes: {self.load_node_time:.2f} seconds")
+
+        self.log.info(' ')
+        self.log.info('updating schema dictionary  for new nodes created')
+        self.update_indexs_with_new()   # updates index dictionary with new nodes (created today)
+        self.log.info('schema dictionary has been refreshed')  # Time in seconds, e.g. 5.38091952400282
+        self.log.info(' ')
+
+        rel_start_time = time.perf_counter()
+        batch_size = 10000
+        batch_index = 1
+
+        for txt in processed_files:
+            if loading_mode != DELETE_MODE:
+                nodes_done = 0
+                while nodes_done < len(txt):
+                    batch_time = time.time()
+                    if len(txt) <= batch_size:
+                        start_node = 0
+                        end_node = len(txt)
+                    elif (nodes_done+batch_size) > len(txt):
+                        start_node = nodes_done
+                        end_node = len(txt)
+                    else:
+                        start_node = nodes_done
+                        end_node = nodes_done + batch_size
+                    data_to_work = txt[start_node: end_node]
+
+                    self.load_relationships(session, data_to_work, loading_mode, batch_index, batch_time,  split)
+                    nodes_done += len(data_to_work)
+
+                    batch_index += 1
+#                    print(f"Total Elapsed time for relationships: {time.perf_counter()-batch_time:.4f} seconds")
+
+        self.log.info(f"Total Number of Relationships Created / Updated: {self.relationship_passed}, " +
+                      f"Nodes Failed: {self.relationship_failed}")
+
+        self.load_relation_time = time.perf_counter()-rel_start_time
+        self.log.info(f"Total time to make all relationships {self.load_relation_time:.2f} seconds")
 
     # Remove extra spaces at beginning and end of the keys and values
     @staticmethod
     def cleanup_node(node):
-        return {key if not key else key.strip(): value if not value else value.strip() for key, value in node.items()}
+        return {key if not key else key.strip(): value if not value else value.strip()
+                if isinstance(value, str) else value for key, value in node.items()}
+        # return {key if not key else key.strip(): value if not value else value.strip() for key, value in node.items()}
 
     # Cleanup values for Boolean, Int and Float types
     # Add uuid to nodes if one not exists
     # Add parent id(s)
     # Add extra properties for "value with unit" properties
-    def prepare_node(self, node, file_name):
+    def prepare_node(self, node):
         obj = self.cleanup_node(node)
+
         node_type = obj.get(NODE_TYPE, None)
         # Cleanup values for Boolean, Int and Float types
         if node_type:
-            df_validation_result = pd.DataFrame(columns=['File Name', 'Property', 'Value', 'Reason', 'Line Numbers', 'Severity'])
             for key, value in obj.items():
                 search_node_type = node_type
                 search_key = key
@@ -406,6 +493,7 @@ class DataLoader:
                     try:
                         if value is None:
                             cleaned_value = None
+                            cleaned_value = np.nan
                         else:
                             cleaned_value = int(value)
                     except ValueError:
@@ -421,8 +509,8 @@ class DataLoader:
                         cleaned_value = None
                     obj[key] = cleaned_value
                 elif key_type == 'Array':
-                    items = self.schema.get_list_values(value)
-                    # todo: need to transform items if item type is not string
+                    items = get_list_values(value)
+
                     obj[key] = json.dumps(items)
                 elif key_type == 'DateTime' or key_type == 'Date':
                     if value is None:
@@ -430,59 +518,41 @@ class DataLoader:
                     else:
                         cleaned_value = reformat_date(value)
                     obj[key] = cleaned_value
-            obj2 = {}
-            for key, value in obj.items():
-                obj2[key] = value
-                # Add parent id field(s) into node
-                if obj[NODE_TYPE] in self.schema.props.save_parent_id and is_parent_pointer(key):
-                    header = key.split('.')
-                    if len(header) > 2:
-                        self.log.warning('Column header "{}" has multiple periods!'.format(key))
-                        df_validation_result = self.update_field_validation_result(df_validation_result, file_name, "", "column_header_has_multiple_periods", "warning")
-                        if obj[NODE_TYPE] not in self.df_validation_dict.keys():
-                            self.df_validation_dict[obj[NODE_TYPE]] = df_validation_result
-                        else:
-                            self.df_validation_dict[obj[NODE_TYPE]] = pd.concat([self.df_validation_dict[obj[NODE_TYPE]], df_validation_result])
-                    field_name = header[1]
-                    parent = header[0]
-                    combined = '{}_{}'.format(parent, field_name)
-                    if field_name in obj:
-                        self.log.debug(
-                            '"{}" field is in both current node and parent "{}", use {} instead !'.format(key, parent,
-                                                                                                        combined))
-                        field_name = combined
-                    # Add an value for parent id
-                    obj2[field_name] = value
-                # Add extra properties if any
-                for extra_prop_name, extra_value in self.schema.get_extra_props(node_type, key, value).items():
-                    obj2[extra_prop_name] = extra_value
 
-            if UUID not in obj2:
-                id_field = self.schema.get_id_field(obj2)
-                id_value = self.schema.get_id(obj2)
-                node_type = obj2.get(NODE_TYPE)
-                if node_type:
-                    if not id_value:
-                        obj2[UUID] = self.schema.get_uuid_for_node(node_type, self.get_signature(obj2))
-                    elif id_field != UUID:
-                        obj2[UUID] = self.schema.get_uuid_for_node(node_type, id_value)
-                else:
-                    raise Exception('No "type" column in file')
-            return obj2
-        elif not self.cheat_mode:
-            self.log.error('No "type" column in file')
-            #sys.exit(1)
-            df_validation_result = pd.DataFrame(columns=['File Name', 'Property', 'Value', 'Reason', 'Line Numbers', 'Severity'])
-            df_validation_result = self.update_field_validation_result(df_validation_result, file_name, "", "type_column_missing", "error")
-            if OTHER not in self.df_validation_dict.keys():
-                self.df_validation_dict[OTHER] = df_validation_result
+        obj2 = {}
+        for key, value in obj.items():
+            obj2[key] = value
+            # Add parent id field(s) into node
+            if obj[NODE_TYPE] in self.schema.props.save_parent_id and is_parent_pointer(key):
+                header = key.split('.')
+                if len(header) > 2:
+                    self.log.warning('Column header "{}" has multiple periods!'.format(key))
+                field_name = header[1]
+                parent = header[0]
+                combined = '{}_{}'.format(parent, field_name)
+                if field_name in obj:
+                    self.log.debug(
+                        '"{}" field is in both current node and parent "{}", use {} instead !'.format(key, parent,
+                                                                                                      combined))
+                    field_name = combined
+                # Add an value for parent id
+                obj2[field_name] = value
+            # Add extra properties if any
+            for extra_prop_name, extra_value in self.schema.get_extra_props(node_type, key, value).items():
+                obj2[extra_prop_name] = extra_value
+
+        if UUID not in obj2:
+            id_field = self.schema.get_id_field(obj2)
+            id_value = self.schema.get_id(obj2)
+            node_type = obj2.get(NODE_TYPE)
+            if node_type:
+                if not id_value:
+                    obj2[UUID] = self.schema.get_uuid_for_node(node_type, self.get_signature(obj2))
+                elif id_field != UUID:
+                    obj2[UUID] = self.schema.get_uuid_for_node(node_type, id_value)
             else:
-                self.df_validation_dict[OTHER] = pd.concat([self.df_validation_dict[OTHER], df_validation_result])
-            self.skip_validation_flag = True
-            return obj
-        else: #if enable cheat mode and bypass the validation
-            self.log.error('No "type" column in file, abort loading')
-            sys.exit(1)
+                print('No "type" property in node')
+        return obj2
 
     def get_signature(self, node):
         result = []
@@ -497,7 +567,7 @@ class DataLoader:
         if not self.driver or not isinstance(self.driver, Driver):
             self.log.error('Invalid Neo4j Python Driver!')
             return False
-        with self.driver.session() as session:
+        with self.driver.session(database=self.db_name) as session:
             file_encoding = check_encoding(file_name)
             with open(file_name, encoding=file_encoding) as in_file:
                 self.log.info('Validating relationships in file "{}" ...'.format(file_name))
@@ -506,7 +576,7 @@ class DataLoader:
                 validation_failed = False
                 violations = 0
                 for org_obj in reader:
-                    obj = self.prepare_node(org_obj, file_name)
+                    obj = self.prepare_node(org_obj)
                     line_num += 1
                     # Validate parent exist
                     if CASE_ID in obj:
@@ -526,7 +596,7 @@ class DataLoader:
         if not self.driver or not isinstance(self.driver, Driver):
             self.log.error('Invalid Neo4j Python Driver!')
             return False
-        with self.driver.session() as session:
+        with self.driver.session(database=self.db_name) as session:
             file_encoding = check_encoding(file_name)
             with open(file_name, encoding=file_encoding) as in_file:
                 self.log.info('Validating relationships in file "{}" ...'.format(file_name))
@@ -536,7 +606,7 @@ class DataLoader:
                 violations = 0
                 for org_obj in reader:
                     line_num += 1
-                    obj = self.prepare_node(org_obj, file_name)
+                    obj = self.prepare_node(org_obj)
                     results = self.collect_relationships(obj, session, False, line_num)
                     relationships = results[RELATIONSHIPS]
                     provided_parents = results[PROVIDED_PARENTS]
@@ -572,15 +642,13 @@ class DataLoader:
 
     # Validate the field names
     def validate_field_name(self, file_name):
-        df_validation_result = pd.DataFrame(columns=['File Name', 'Property', 'Value', 'Reason', 'Line Numbers', 'Severity'])
         file_encoding = check_encoding(file_name)
         with open(file_name, encoding=file_encoding) as in_file:
             reader = csv.DictReader(in_file, delimiter='\t')
+
             row = next(reader)
             row = self.cleanup_node(row)
-            row_prepare_node = self.prepare_node(row, file_name)
-            if self.skip_validation_flag:
-                return False
+            row_prepare_node = self.prepare_node(row)
             parent_pointer = []
             for key in row_prepare_node.keys():
                 if is_parent_pointer(key):
@@ -592,47 +660,26 @@ class DataLoader:
                     try:
                         if key not in self.schema.get_props_for_node(row['type']) and key != 'type':
                             error_list.append(key)
-                    except:
+                    except Exception:
                         error_list.append(key)
                 else:
                     try:
                         if key.split('.')[1] not in self.schema.get_props_for_node(key.split('.')[0]):
                             parent_error_list.append(key)
-                    except:
+                    except Exception:
                         parent_error_list.append(key)
             if len(error_list) > 0:
                 for error_field_name in error_list:
                     self.log.warning('Property: "{}" not found in data model'.format(error_field_name))
-                    df_validation_result = self.update_field_validation_result(df_validation_result, file_name, error_field_name, "property_not_found_in_model", "warning")
             if len(parent_error_list) > 0:
                 for parent_error_field_name in parent_error_list:
                     self.log.error('Parent pointer: "{}" not found in data model'.format(parent_error_field_name))
-                    df_validation_result = self.update_field_validation_result(df_validation_result, file_name, parent_error_field_name, "parent_pointer_not_found_in_model", "error")
-                if len(df_validation_result) > 0:
-                    if row[NODE_TYPE] not in self.df_validation_dict.keys():
-                        self.df_validation_dict[row[NODE_TYPE]] = df_validation_result
-                    else:
-                        self.df_validation_dict[row[NODE_TYPE]] = pd.concat([self.df_validation_dict[row[NODE_TYPE]], df_validation_result])
                 self.log.error('Parent pointer not found in the data model, abort loading!')
                 return False
-        if len(df_validation_result) > 0:
-            if row[NODE_TYPE] not in self.df_validation_dict.keys():
-                    self.df_validation_dict[row[NODE_TYPE]] = df_validation_result
-            else:
-                self.df_validation_dict[row[NODE_TYPE]] = pd.concat([self.df_validation_dict[row[NODE_TYPE]], df_validation_result])
         return True
-    # update field validation result
-    def update_field_validation_result(self, df_validation_result, file_name, error_field_name, reason, severity):
-        tmp_df_validation_result_field = pd.DataFrame()
-        tmp_df_validation_result_field['File Name'] = [os.path.basename(file_name)]
-        tmp_df_validation_result_field['Property'] = [error_field_name]
-        tmp_df_validation_result_field['Reason'] =  [reason]
-        tmp_df_validation_result_field['Severity'] = [severity]
-        df_validation_result = pd.concat([df_validation_result, tmp_df_validation_result_field])
-        return df_validation_result
+
     # Validate file
-    def validate_file(self, file_name, max_violations, verbose):
-        self.skip_validation_flag = False
+    def validate_file(self, file_name, max_violations):
         file_encoding = check_encoding(file_name)
         with open(file_name, encoding=file_encoding) as in_file:
             self.log.info('Validating file "{}" ...'.format(file_name))
@@ -641,20 +688,13 @@ class DataLoader:
             validation_failed = False
             violations = 0
             ids = {}
-            df_validation_result = pd.DataFrame(columns=['File Name', 'Property', 'Value', 'Reason', 'Line Numbers', 'Severity'])
-            field_validation_result = self.validate_field_name(file_name)
-            if not field_validation_result:
+            if not self.validate_field_name(file_name):
                 return False
-            df_invalid = pd.DataFrame(columns=['invalid_properties', 'invalid_values', 'invalid_reason', 'invalid_line_num', 'node_type'])
-            df_missing = pd.DataFrame(columns=['missing_properties', 'missing_reason', 'missing_line_num', 'node_type'])
-            df_duplicate_id = pd.DataFrame(columns=['duplicate_id', 'duplicate_reason', 'duplicate_id_field', 'duplicate_line_num', 'node_type'])
-            duplicate_id = []
-            duplicate_reason = []
-            duplicate_line_num = []
-            duplicate_node_type = []
-            duplicate_id_field = []
+
             for org_obj in reader:
-                obj = self.cleanup_node(org_obj)
+                # obj = self.cleanup_node(org_obj)
+                obj = self.prepare_node(org_obj)
+
                 props = self.get_node_properties(obj)
                 line_num += 1
                 id_field = self.schema.get_id_field(obj)
@@ -668,117 +708,27 @@ class DataLoader:
                                 f'Invalid data at line {line_num}: duplicate {id_field}: {node_id}, found in line: '
                                 f'{", ".join(ids[node_id]["lines"])}')
                             ids[node_id]['lines'].append(str(line_num))
-                            duplicate_id.append(node_id)
-                            duplicate_reason.append('duplicate_id')
-                            duplicate_line_num.append(line_num)
-                            duplicate_node_type.append(obj[NODE_TYPE])
-                            duplicate_id_field.append(id_field)
                         else:
                             # Same ID exists in same file, but properties are also same, probably it's pointing same
                             # object to multiple parents
                             self.log.debug(
                                 f'Duplicated data at line {line_num}: duplicate {id_field}: {node_id}, found in line: '
                                 f'{", ".join(ids[node_id]["lines"])}')
-                            duplicate_id.append(node_id)
-                            duplicate_reason.append('many_to_many')
-                            duplicate_line_num.append(line_num)
-                            duplicate_node_type.append(obj[NODE_TYPE])
-                            duplicate_id_field.append(id_field)
                     else:
                         ids[node_id] = {'props': get_props_signature(props), 'lines': [str(line_num)]}
 
-                validate_result = self.schema.validate_node(obj[NODE_TYPE], obj, verbose)
-                try:
-                    if len(validate_result['invalid_properties']) > 0:
-                        tmp_df_invalid = pd.DataFrame()
-                        tmp_df_invalid['invalid_properties'] = validate_result['invalid_properties']
-                        tmp_df_invalid['invalid_values'] = validate_result['invalid_values']
-                        tmp_df_invalid['invalid_reason'] = validate_result['invalid_reason']
-                        tmp_df_invalid['invalid_line_num'] = line_num
-                        tmp_df_invalid['node_type'] = obj[NODE_TYPE]
-                        df_invalid = pd.concat([df_invalid,tmp_df_invalid])
-
-                except Exception as e:
-                    print(e)
-                try:
-                    if len(validate_result['missing_properties']) > 0:
-                        tmp_df_missing = pd.DataFrame()
-                        tmp_df_missing['missing_properties'] = validate_result['missing_properties']
-                        tmp_df_missing['missing_reason'] = validate_result['missing_reason']
-                        tmp_df_missing['missing_line_num'] = line_num
-                        tmp_df_missing['node_type'] = obj[NODE_TYPE]
-                        df_missing = pd.concat([df_missing, tmp_df_missing])
-                except Exception as e:
-                    print(e)
+                validate_result = self.schema.validate_node(obj[NODE_TYPE], obj)
                 if not validate_result['result'] and not validate_result['warning']:
                     for msg in validate_result['messages']:
                         self.log.error('Invalid data at line {}: "{}"!'.format(line_num, msg))
                     validation_failed = True
                     violations += 1
                     if violations >= max_violations:
-                        #return False, df_validation_dict
-                        break
+                        return False
                 elif not validate_result['result'] and validate_result['warning']:
                     for msg in validate_result['messages']:
                         self.log.warning('Invalid data at line {}: "{}"!'.format(line_num, msg))
-            # ouput the data vlidation result
-            df_duplicate_id['duplicate_id'] = duplicate_id
-            df_duplicate_id['duplicate_reason'] = duplicate_reason
-            df_duplicate_id['duplicate_line_num'] = duplicate_line_num
-            df_duplicate_id['node_type'] = duplicate_node_type
-            df_duplicate_id['duplicate_id_field'] = duplicate_id_field
-            ''''''
-            if len(df_invalid) > 0:
-                df_invalid = df_invalid.sort_values(by=['invalid_properties'])
-                df_invalid = df_invalid.explode('invalid_line_num').groupby(['invalid_properties', 'invalid_values', 'invalid_reason', 'node_type'])['invalid_line_num'].unique().reset_index()
-                tmp_df_validation_result_invalid = pd.DataFrame()
-                tmp_df_validation_result_invalid['File Name'] = [os.path.basename(file_name)] * len(df_invalid)
-                tmp_df_validation_result_invalid['Property'] = df_invalid['invalid_properties']
-                tmp_df_validation_result_invalid['Value'] =  df_invalid['invalid_values']
-                tmp_df_validation_result_invalid['Reason'] =  df_invalid['invalid_reason']
-                tmp_df_validation_result_invalid['Line Numbers'] = self.convert_line_num_list(list(df_invalid['invalid_line_num']))
-                tmp_df_validation_result_invalid['Severity'] = ["error"] * len(df_invalid)
-                df_validation_result = pd.concat([df_validation_result, tmp_df_validation_result_invalid])
-            if len(df_missing) >0:
-                df_missing = df_missing.sort_values(by=['missing_properties'])
-                df_missing = df_missing.explode('missing_line_num').groupby(['missing_properties', 'missing_reason', 'node_type'])['missing_line_num'].unique().reset_index()
-                tmp_df_validation_result_missing = pd.DataFrame()
-                tmp_df_validation_result_missing['File Name'] = [os.path.basename(file_name)] * len(df_missing)
-                tmp_df_validation_result_missing['Property'] = df_missing['missing_properties']
-                tmp_df_validation_result_missing['Reason'] =  df_missing['missing_reason']
-                tmp_df_validation_result_missing['Line Numbers'] = self.convert_line_num_list(list(df_missing['missing_line_num']))
-                tmp_df_validation_result_missing['Severity'] = ["error"] * len(df_missing)
-                df_validation_result = pd.concat([df_validation_result, tmp_df_validation_result_missing])
-            if len(df_duplicate_id) > 0:
-                df_duplicate_id = df_duplicate_id.explode('duplicate_line_num').groupby(['duplicate_id', 'duplicate_reason', 'duplicate_id_field', 'node_type'])['duplicate_line_num'].unique().reset_index()
-                tmp_df_validation_result_duplicate= pd.DataFrame()
-                tmp_df_validation_result_duplicate['File Name'] = [os.path.basename(file_name)] * len(df_duplicate_id)
-                tmp_df_validation_result_duplicate['Property'] = df_duplicate_id['duplicate_id_field']
-                tmp_df_validation_result_duplicate['Value'] = df_duplicate_id['duplicate_id']
-                tmp_df_validation_result_duplicate['Reason'] = df_duplicate_id['duplicate_reason']
-                tmp_df_validation_result_duplicate['Line Numbers'] = self.convert_line_num_list(list(df_duplicate_id['duplicate_line_num']))
-                tmp_df_validation_result_duplicate['Severity'] = ["error"] * len(df_duplicate_id)
-                df_validation_result = pd.concat([df_validation_result, tmp_df_validation_result_duplicate])
-            if len(df_validation_result) > 0:
-                if obj[NODE_TYPE] not in self.df_validation_dict.keys():
-                    self.df_validation_dict[obj[NODE_TYPE]] = df_validation_result
-                else:
-                    self.df_validation_dict[obj[NODE_TYPE]] = pd.concat([self.df_validation_dict[obj[NODE_TYPE]], df_validation_result])
             return not validation_failed
-
-    def convert_line_num_list(self, line_num_list):
-        if len(line_num_list) > 0:
-            new_line_num_list = []
-            for line_num in line_num_list:
-                line_num.sort()
-                line_num_str = [str(x) for x in line_num]
-                if len(line_num) > 1:
-                    new_line_num_list.append(','.join(line_num_str))
-                else:
-                    new_line_num_list.append(line_num_str[0])
-            return new_line_num_list
-        else:
-            return line_num_list
 
     def get_new_statement(self, node_type, obj):
         # statement is used to create current node
@@ -865,7 +815,80 @@ class DataLoader:
         return nodes_deleted, relationship_deleted
 
     # load file
-    def load_nodes(self, session, file_name, loading_mode, split=False):
+    def convert_df_to_dict(self, file_data):
+        total_records = len(file_data)
+        file_data.columns = [i if len(i.split('.')) == 1 else i.split('.')[1] for i in file_data.columns]
+        qry_str = ['n.' + i + ' = row.' + i for i in file_data.columns]
+        file_data = file_data.to_dict('records')
+
+        return file_data, qry_str, total_records
+
+    def process_data_in_batches(self, tx, data, create_type, node_type):
+        new_qry = """CALL apoc.periodic.iterate( """
+        new_qry += """\"UNWIND $data AS item return item\", """  # Iterate statement: Unwinds the list of data items
+
+        if create_type == "CREATE":
+            new_qry += """\"CREATE (n:MyNode) SET n = item, n.created = datetime() return n \", """  # Action statement: Creates a node for each item
+        elif create_type == 'MATCH':  # add filtering criteria to node
+            new_qry += """ \"Match(n:MyNode) where """ + f"{ID_FUNC}(n) " + """ = item.Node_ID and n.Primary_Key_Value = item.Primary_Key_Value """
+            new_qry += """  SET n.updated = datetime()  return n \", """
+
+        new_qry += """{batchSize: 10000, retries: 1, """   # Process 1000 items per batch
+        new_qry += """parallel: true, """    # Run batches sequentially
+        # new_qry += """iterateList: true, """ # process all batches at once
+        new_qry += """params: { data: $data } } )"""
+
+        new_qry = new_qry.replace("MyNode", node_type)
+
+        # remove user created variables, do not need to be loaded into db
+        new_qry = new_qry.replace("n.Node_Exists = item.Node_Exists", "")
+        new_qry = new_qry.replace("n.Node_ID = item.Node_ID", "")
+        # new_qry = new_qry.replace("n.Primary_Key_Value = item.Primary_Key_Value","")
+
+        result = tx.run(new_qry, data=data)
+        data_list = [i for i in result.data()]
+        if data_list[0]["failedBatches"] == 0:
+            return data_list[0]
+        else:
+            print("error found")
+            return []
+
+    def process_relationships_batches(self, tx, data, curr_qry):
+        new_qry = """CALL apoc.periodic.iterate( """
+        new_qry += """\"UNWIND $data AS batch return batch\", """  # Iterate statement: Unwinds the list of data items
+        new_qry += """ \"old_qry \", """
+
+        new_qry += """{batchSize: 10000, """   # Process 1000 items per batch
+        new_qry += """parallel: true, """     # Run batches sequentially
+        new_qry += """iterateList: true, """  # process all batches at once
+        new_qry += """params: { data: $data } } )"""   # Pass the data list as a parameter
+
+        new_qry = new_qry.replace("old_qry", curr_qry)
+
+        result = tx.run(new_qry, data=data)
+        # result = tx.run(curr_qry, data)
+
+        data_list = [i for i in result.data()]
+        return data_list[0]
+
+    def write_nodes_to_db(self, session, col_name, node_type, current_nodes, create_type):
+
+        file_data, qry_str, total_records = self.convert_df_to_dict(current_nodes)
+        rem_list = ['Node_Exists', 'Node_ID', 'Primary_Key_Value']
+
+        index = 0
+        for curr_row in file_data:
+            file_data[index] = {i: curr_row[i] for i in curr_row if i not in rem_list}
+            index += 1
+
+        qry_result = session.execute_write(self.process_data_in_batches, file_data, create_type, node_type)
+        if len(qry_result) == 0:
+            self.load_failed += len(file_data)  # entire batch failed
+        else:
+            self.load_passed += qry_result["operations"]["committed"]
+            self.load_failed += qry_result["operations"]['failed']
+
+    def load_nodes(self, session, tx, file_name, file_dict, loading_mode,  wipe_db, split=False):
         if loading_mode == NEW_MODE:
             action_word = 'Loading new'
         elif loading_mode == UPSERT_MODE:
@@ -874,83 +897,88 @@ class DataLoader:
             action_word = 'Deleting'
         else:
             raise Exception('Wrong loading_mode: {}'.format(loading_mode))
+        self.log.info(' ')
         self.log.info('{} nodes from file: {}'.format(action_word, file_name))
 
-        file_encoding = check_encoding(file_name)
-        with open(file_name, encoding=file_encoding) as in_file:
-            reader = csv.DictReader(in_file, delimiter='\t')
-            nodes_created = 0
-            nodes_updated = 0
-            nodes_deleted = 0
-            node_type = 'UNKNOWN'
-            relationship_deleted = 0
-            line_num = 1
-            transaction_counter = 0
-
-            # Use session in one transaction mode
-            tx = session
-            # Use transactions in split-transactions mode
-            if split:
-                tx = session.begin_transaction()
-
-            for org_obj in reader:
-                line_num += 1
-                transaction_counter += 1
-                obj = self.prepare_node(org_obj, file_name)
-                node_type = obj[NODE_TYPE]
-                node_id = self.schema.get_id(obj)
-                if not node_id:
-                    raise Exception('Line:{}: No ids found!'.format(line_num))
-                id_field = self.schema.get_id_field(obj)
-                if loading_mode == UPSERT_MODE:
-                    statement = self.get_upsert_statement(node_type, id_field, obj)
-                elif loading_mode == NEW_MODE:
-                    if self.node_exists(tx, node_type, id_field, node_id):
-                        raise Exception(
-                            'Line: {}: Node (:{} {{ {}: {} }}) exists! Abort loading!'.format(line_num, node_type,
-                                                                                              id_field, node_id))
-                    else:
-                        statement = self.get_new_statement(node_type, obj)
-                elif loading_mode == DELETE_MODE:
-                    n_deleted, r_deleted = self.delete_node(tx, obj)
-                    nodes_deleted += n_deleted
-                    relationship_deleted += r_deleted
-                else:
-                    raise Exception('Wrong loading_mode: {}'.format(loading_mode))
-
-                if loading_mode != DELETE_MODE:
-                    result = tx.run(statement, obj)
-                    count = result.consume().counters.nodes_created
-                    #count the updated nodes
-                    update_count = 0
-                    if result.consume().counters.nodes_created == 0 and result.consume().counters._contains_updates:
-                        update_count = 1
-                    self.nodes_created += count
-                    self.nodes_updated += update_count
-                    nodes_created += count
-                    nodes_updated += update_count
-                    self.nodes_stat[node_type] = self.nodes_stat.get(node_type, 0) + count
-                    self.nodes_stat_updated[node_type] = self.nodes_stat_updated.get(node_type, 0) + update_count
-                # commit and restart a transaction when batch size reached
-                if split and transaction_counter >= BATCH_SIZE:
-                    tx.commit()
-                    tx = session.begin_transaction()
-                    self.log.info(f'{line_num - 1} rows loaded ...')
-                    transaction_counter = 0
-            # commit last transaction
-            if split:
-                tx.commit()
-
-            if loading_mode == DELETE_MODE:
-                self.log.info('{} node(s) deleted'.format(nodes_deleted))
-                self.log.info('{} relationship(s) deleted'.format(relationship_deleted))
+        # file_data = pd.read_csv(file_name, sep='\t', header=0)
+        file_data = file_dict[file_name]
+        for col in file_data:
+            if file_data[col].dtype in ['int64', 'float64']:
+                file_data[col] = file_data[col].fillna(np.nan)
+            elif file_data[col].dtype == 'datetime64[ns]':
+                file_data[col] = file_data[col].fillna(pd.to_datetime('1900-01-01'))
             else:
-                self.log.info('{} (:{}) node(s) loaded'.format(nodes_created, node_type))
-                self.log.info('{} (:{}) node(s) updated'.format(nodes_updated, node_type))
+                file_data[col] = file_data[col].fillna("missing data")
 
+        # terms would only exist if conversion files are present, else will ignore
+        if 'location_codes' in dir(self.schema):
+            file_data = convert_codes(file_data, 'cancer_diagnosis_primary_site', self.schema.location_codes)
+        if 'histology_codes' in dir(self.schema):
+            file_data = convert_codes(file_data, 'cancer_diagnosis_disease_morphology', self.schema.histology_codes)
+
+        # load nodes in batches of 5,000
+        nodes_done = 0
+        all_obj = []
+        all_new_nodes = 0
+        all_existing_nodes = 0
+        batches = 0
+
+        # remove duplicate records by primay ID (This value should be unique)
+        try:
+            key_name = self.schema.get_id_field(file_data.iloc[0].to_dict())
+            file_data = file_data.drop_duplicates(key_name)
+            file_data = file_data.query(f"{key_name} != 'missing data'")
+        except Exception as e:
+            print(e)
+
+        while nodes_done < len(file_data):
+            batch_size = 5000
+            batch_time = time.time()
+            if len(file_data) <= batch_size:
+                start_node = 0
+                end_node = len(file_data)
+            elif (nodes_done+batch_size) > len(file_data):
+                start_node = nodes_done
+                end_node = len(file_data)
+            else:
+                start_node = nodes_done
+                end_node = nodes_done + batch_size
+            data_to_work = file_data[start_node: end_node]
+
+            data_to_work.reset_index(inplace=True, drop=True)
+            for index in data_to_work.index:
+                obj = self.prepare_node(data_to_work.iloc[index].to_dict())  # formats incomming data
+                all_obj.append(obj)
+
+            df = pd.DataFrame(all_obj[start_node: end_node])
+            col_name = self.schema.get_id_field(obj)  # primary key field
+            node_type = obj[NODE_TYPE]   # current node to match
+
+            if loading_mode != DELETE_MODE:
+                check_db = df.merge(self.node_keys_dict[node_type]['Node_Index_DF'],
+                                    left_on=self.schema.get_id_field(obj), right_on="Primary_Key_Value",
+                                    how="left", indicator="Node_Exists")
+
+                # if the node does not already exist on primary key then create it
+                new_nodes = check_db.query("Node_Exists == 'left_only'")   # use create
+                if len(new_nodes) > 0:
+                    self.write_nodes_to_db(session, col_name, node_type, new_nodes, "CREATE")
+
+                # if the node does  already exist on primary key then update it using the merge statement
+                existing_nodes = check_db.query("Node_Exists == 'both'")   # use match
+                if len(existing_nodes) > 0:
+                    self.write_nodes_to_db(session, col_name, node_type, existing_nodes, "MATCH")
+            all_existing_nodes += len(existing_nodes)
+            all_new_nodes += len(new_nodes)
+
+            nodes_done += len(data_to_work)
+            batches += 1
+            end_time = time.time()
+            self.log.info(f"Completed batch {batches}, total nodes done: {nodes_done} in {end_time - batch_time: .2f} seconds")
+        return all_new_nodes, all_existing_nodes, all_obj
 
     def node_exists(self, session, label, prop, value):
-        statement = 'MATCH (m:{0} {{ {1}: ${1} }}) return m'.format(label, prop)
+        statement = 'MATCH (m:{0} {{ {1}: ''${1}'' }}) return m'.format(label, prop)
         result = session.run(statement, {prop: value})
         count = len(result.data())
         if count > 1:
@@ -963,7 +991,6 @@ class DataLoader:
         int_node_created = 0
         provided_parents = 0
         relationship_properties = {}
-        #print(obj.items())
         for key, value in obj.items():
             if is_parent_pointer(key):
                 provided_parents += 1
@@ -1040,16 +1067,18 @@ class DataLoader:
         return False
 
     # Check if a relationship of same type exists, if so, return a statement which can delete it, otherwise return False
-    def has_existing_relationship(self, session, node_type, node, relationship, count_same_parent=False):
+    def has_existing_relationship(self, session, node_type, node, relationship, curr_index,  count_same_parent=False):
         relationship_name = relationship[RELATIONSHIP_TYPE]
         parent_type = relationship[PARENT_TYPE]
         parent_id_field = relationship[PARENT_ID_FIELD]
 
-        base_statement = 'MATCH (n:{0} {{ {1}: ${1} }})-[r:{2}]->(m:{3})'.format(node_type,
-                                                                                 self.schema.get_id_field(node),
-                                                                                 relationship_name, parent_type)
+        base_statement = 'MATCH (n:{0})-[r:{2}]->(m:{3}) where n.{1} = ${1} and {5}(n) = {4} '.format(node_type,
+                                                                                                      self.schema.get_id_field(node),
+                                                                                                      relationship_name, parent_type,
+                                                                                                      curr_index, ID_FUNC)
         statement = base_statement + ' return m.{} AS {}'.format(parent_id_field, PARENT_ID)
         result = session.run(statement, node)
+
         if result:
             old_parent = result.single()
             if old_parent:
@@ -1068,105 +1097,64 @@ class DataLoader:
 
         return False
 
-    def remove_old_relationship(self, session, node_type, node, relationship):
-        del_statement = self.has_existing_relationship(session, node_type, node, relationship)
+    def remove_old_relationship(self, session, node_type, node, relationship, curr_index):
+        del_statement = self.has_existing_relationship(session, node_type, node, relationship, curr_index)
         if del_statement:
             del_result = session.run(del_statement, node)
             if not del_result:
                 self.log.error('Delete old relationship failed!')
 
-    def load_relationships(self, session, file_name, loading_mode, split=False):
-        if loading_mode == NEW_MODE:
-            action_word = 'Loading new'
-        elif loading_mode == UPSERT_MODE:
-            action_word = 'Loading'
+    def load_relationships(self, session, file_data, loading_mode, batch_index, batch_time,  split=False):
+        file_data_df = pd.DataFrame(file_data)
+        obj = file_data_df.iloc[0].to_dict()
+
+        node_type = obj[NODE_TYPE]
+        file_data_df = file_data_df.merge(self.node_keys_dict[node_type]['Node_Index_DF'],
+                                          left_on=self.schema.get_id_field(obj), right_on="Primary_Key_Value",
+                                          how="left", indicator="Node_Exists")
+
+        missing_id = file_data_df.query("Node_Exists not in ['both']")
+        if len(missing_id) > 0:
+            self.log.error("Unable to make relationships: file data does not align properly with database")
+
+        file_data_df.drop("Node_Exists", axis=1, inplace=True)
+        ids = self.schema.props.id_fields
+        header_names = [f"{curr_id}.{ids[curr_id]}" for curr_id in ids]
+
+        check_relationship = [i for i in file_data_df.columns if i in header_names]
+        if len(check_relationship) == 0:
+            self.log.info(f"no relationship found for file type: {list(set(file_data_df[NODE_TYPE]))}")
         else:
-            raise Exception('Wrong loading_mode: {}'.format(loading_mode))
-        self.log.info('{} relationships from file: {}'.format(action_word, file_name))
+            for curr_relationship in check_relationship:
+                try:
+                    relation = self.schema.relationships[node_type][curr_relationship.split('.')[0]]['relationship_type']
+                    qry_str = "  "
+                    qry_str += f"MATCH (m:{curr_relationship.split('.')[0]}) "
+                    qry_str += f"MATCH (n:{node_type}) "
+                    qry_str += f"where m.{curr_relationship.split('.')[1]} = batch.{curr_relationship.split('.')[1]} and "
 
-        file_encoding = check_encoding(file_name)
-        with open(file_name, encoding=file_encoding) as in_file:
-            reader = csv.DictReader(in_file, delimiter='\t')
-            relationships_created = {}
-            int_nodes_created = 0
-            line_num = 1
-            transaction_counter = 0
+                    qry_str += 'n.{0} = batch.{0} and {1}(n) = batch.Node_ID '.format(self.schema.get_id_field(obj), ID_FUNC)
+                    qry_str += f"MERGE (n)-[r:{relation}]->(m) ON CREATE SET r.created = datetime() ON MATCH SET r.updated = datetime()"
 
-            # Use session in one transaction mode
-            tx = session
-            # Use transactions in split-transactions mode
-            if split:
-                tx = session.begin_transaction()
-            for org_obj in reader:
-                line_num += 1
-                transaction_counter += 1
-                obj = self.prepare_node(org_obj, file_name)
-                node_type = obj[NODE_TYPE]
-                results = self.collect_relationships(obj, tx, True, line_num)
-                relationships = results[RELATIONSHIPS]
-                int_nodes_created += results[INT_NODE_CREATED]
-                provided_parents = results[PROVIDED_PARENTS]
-                relationship_props = results[RELATIONSHIP_PROPS]
-                if provided_parents > 0:
-                    # if len(relationships) == 0:
-                    #     raise Exception('Line: {}: No parents found, abort loading!'.format(line_num))
-                    for relationship in relationships:
-                        relationship_name = relationship[RELATIONSHIP_TYPE]
-                        multiplier = relationship[MULTIPLIER]
-                        parent_node = relationship[PARENT_TYPE]
-                        parent_id_field = relationship[PARENT_ID_FIELD]
-                        parent_id = relationship[PARENT_ID]
-                        properties = relationship_props.get(relationship_name, {})
-                        if multiplier in [DEFAULT_MULTIPLIER, ONE_TO_ONE]:
-                            if loading_mode == UPSERT_MODE:
-                                self.remove_old_relationship(tx, node_type, obj, relationship)
-                            elif loading_mode == NEW_MODE:
-                                if self.has_existing_relationship(tx, node_type, obj, relationship, True):
-                                    raise Exception(
-                                        'Line: {}: Relationship already exists, abort loading!'.format(line_num))
-                            else:
-                                raise Exception('Wrong loading_mode: {}'.format(loading_mode))
-                        else:
-                            self.log.debug('Multiplier: {}, no action needed!'.format(multiplier))
-                        prop_statement = ', '.join(self.get_relationship_prop_statements(properties))
-                        statement = 'MATCH (m:{0} {{ {1}: $__parentID__ }})'.format(parent_node, parent_id_field)
-                        statement += ' MATCH (n:{0} {{ {1}: ${1} }})'.format(node_type,
-                                                                             self.schema.get_id_field(obj))
-                        statement += ' MERGE (n)-[r:{}]->(m)'.format(relationship_name)
-                        statement += ' ON CREATE SET r.{} = datetime()'.format(CREATED)
-                        statement += ', {}'.format(prop_statement) if prop_statement else ''
-                        statement += ' ON MATCH SET r.{} = datetime()'.format(UPDATED)
-                        statement += ', {}'.format(prop_statement) if prop_statement else ''
+                    file_data_df.columns = [i if len(i.split('.')) == 1 else i.split('.')[1] for i in file_data_df.columns]
+                    file_data_dct = file_data_df.to_dict('records')
 
-                        result = tx.run(statement, {**obj, "__parentID__": parent_id, **properties})
-                        count = result.consume().counters.relationships_created
-                        self.relationships_created += count
-                        relationship_pattern = '(:{})->[:{}]->(:{})'.format(node_type, relationship_name, parent_node)
-                        relationships_created[relationship_pattern] = relationships_created.get(relationship_pattern,
-                                                                                                0) + count
-                        self.relationships_stat[relationship_name] = self.relationships_stat.get(relationship_name,
-                                                                                                 0) + count
-                    for plugin in self.plugins:
-                        if plugin.should_run(node_type, NODE_LOADED):
-                            if plugin.create_node(session=tx, line_num=line_num, src=obj):
-                                int_nodes_created += 1
-                # commit and restart a transaction when batch size reached
-                if split and transaction_counter >= BATCH_SIZE:
-                    tx.commit()
-                    tx = session.begin_transaction()
-                    self.log.info(f'{line_num - 1} rows loaded ...')
-                    transaction_counter = 0
+                    qry_result = session.execute_write(self.process_relationships_batches, file_data_dct, qry_str)
 
-            # commit last transaction
-            if split:
-                tx.commit()
-            if provided_parents == 0:
-                    self.log.warning('there is no parent mapping columns in the node {}'.format(node_type))
-            for rel, count in relationships_created.items():
-                self.log.info('{} {} relationship(s) loaded'.format(count, rel))
-            if int_nodes_created > 0:
-                self.log.info('{} intermediate node(s) loaded'.format(int_nodes_created))
+                    if qry_result["operations"]['failed'] > 0:
+                        self.log.error(qry_result["errorMessage"])
 
+                    rel_created = qry_result["updateStatistics"]['relationshipsCreated']
+
+                    end_time = time.time()
+                    self.log.info(f"Completed batch {batch_index}, Relationships Created: {rel_created}, " +
+                                  f"Relationships Failed: {len(file_data) - rel_created} in {end_time - batch_time: .2f} seconds")
+
+                    self.relationship_passed += rel_created
+                    self.relationship_failed += len(file_data) - rel_created
+
+                except Exception:
+                    print(file_data_dct)
         return True
 
     @staticmethod
@@ -1177,16 +1165,49 @@ class DataLoader:
             prop_stmts.append('r.{0} = ${0}'.format(key))
         return prop_stmts
 
+    def clean_database(self, tx):
+        batch_size = 10000
+        self.log.info(" ")
+
+        query = """
+             CALL apoc.periodic.iterate(
+            "MATCH (n) RETURN n",
+            "DETACH DELETE n",
+            {batchSize: $batch_size, parallel: true} ) """
+        result = tx.run(query, batch_size=batch_size)
+
+        data_list = [i for i in result.data()]
+        return data_list[0]
+
+    def get_current_indxes(self, tx):
+        command = "SHOW INDEXES"
+        result = tx.run(command)
+        data_list = [i for i in result.data()]
+        return data_list
+
+    def drop_old_indexes(self, tx, query):
+        tx.run(query)
+
     def wipe_db(self, session, split=False):
-        if split:
-            return self.wipe_db_split(session)
-        else:
-            cleanup_db = 'MATCH (n) DETACH DELETE n'
-            result = session.run(cleanup_db).consume()
-            self.nodes_deleted = result.counters.nodes_deleted
-            self.relationships_deleted = result.counters.relationships_deleted
-            self.log.info('{} nodes deleted!'.format(self.nodes_deleted))
-            self.log.info('{} relationships deleted!'.format(self.relationships_deleted))
+        wipe_timer = time.perf_counter()
+        self.log.info('In process of wipping Database...')
+
+        failed_nodes = 1
+        deleted_nodes = 0
+        while failed_nodes > 0:
+            qry_result = session.execute_write(self.clean_database)
+
+            deleted_nodes += qry_result["operations"]["committed"]
+            failed_nodes = qry_result["operations"]['failed']
+
+        self.log.info(" ")
+        self.wipe_timer = time.perf_counter() - wipe_timer
+        self.log.info(f'{deleted_nodes} nodes deleted in {self.wipe_timer:.2f}')
+
+        result = qry_result = session.execute_write(self.get_current_indxes)
+        for curr_idx in result:
+            query = f"drop index {curr_idx['name']} IF EXISTS;"
+            session.execute_write(self.drop_old_indexes, query)
 
     def wipe_db_split(self, session):
         while True:
@@ -1235,7 +1256,11 @@ class DataLoader:
         if isinstance(node_property, list):
             node_property = ",".join(node_property)
         if index_tuple not in existing:
-            command = "CREATE INDEX ON :{}({});".format(node_name, node_property)
+            #`CREATE INDEX ON :Label(property)` is deprecated
+            #command = "CREATE INDEX ON :{}({});".format(node_name, node_property)
+
+            command = "CREATE INDEX IF NOT EXISTS FOR (n:{0}) ON (n.{1})".format(node_name, node_property)
+
             session.run(command)
             self.indexes_created += 1
             self.log.info("Index created for \"{}\" on property \"{}\"".format(node_name, node_property))

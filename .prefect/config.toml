@@ -1,0 +1,18 @@
+[config_settings]
+# where the manifest will be located in the production enviroment
+    Input_Bucket = "popsci-prod-files-dedicated-bucket" # where the files are located
+    Input_Folder = ""                # folder to hold all study manifests
+    Study_Folder = "First Set of PLCO Data Dictionaries"                    # individual level study folders
+    Transfer_Manifest_Name = "PLCO_File_Transfer_Manifest - 1of 2 for study files - file extensions added to names.tsv"  # name of the manifest being loaded
+
+# where output files will be stored in the dev enviroment
+    Output_Bucket = "popsci-dev-files-dedicated-bucket"   # where to write the created files
+    Output_Folder = "manifest_index_results"   # where to write the created files
+
+# vairables used to make the output manifests
+    Domain = 'populationscience.cancer.gov'              # used to generate the uuid
+    Index_GUID_Prefix = 'dg.4DFC/'                       # used to generate the GUID
+
+# names of the created files to be stored in the dev enviroment
+    Neo4j_Output = 'Neo4j_FTM'       # name of the file used to write to neo4j?
+    Index_Output = 'Indexed_FTM'     # name of the index file

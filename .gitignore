@@ -14,4 +14,197 @@ config/es_loader_*
 backup/
 .vscode/
 **.DS_Store
-
+config/data_files_most_recent
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-study_state_province_territory.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-study_personnel.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-study_country.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-study.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-publication.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-data_file.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-data_collection.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-associated_link.txt
+config/data_files_most_recent/SMCT_Mock_Data/participantSMCT.tsv
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-study_state_province_territory.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-study_personnel.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-study_country.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-study.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-publication.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-data_file.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-data_collection.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-associated_link.txt
+config/data_files_most_recent/PLTV_Mock_Data/participantPLTV.tsv
+config/data_files_most_recent/PLCO/PLCODATApart2.tsv
+config/data_files_most_recent/PLCO/PLCODATApart1.tsv
+config/data_files_most_recent/PLCO/PLCO_Data_Loading_Template - study_state_province_territory.tsv
+config/data_files_most_recent/PLCO/PLCO_Data_Loading_Template - study_personnel.tsv
+config/data_files_most_recent/PLCO/PLCO_Data_Loading_Template - study_country.tsv
+config/data_files_most_recent/PLCO/PLCO_Data_Loading_Template - study.tsv
+config/data_files_most_recent/PLCO/PLCO_Data_Loading_Template - publication.tsv
+config/data_files_most_recent/PLCO/PLCO_Data_Loading_Template - associated_link.tsv
+config/data_files_most_recent/PLCO/PLCO-data_collection v08-28-24 EM but using 0 (No) versus 1 (Yes) - typo fixed.txt
+config/data_files_most_recent/PLCO/participant_PLCO.tsv
+config/data_files_most_recent/PBCS/PBCSDATAFILE.tsv
+config/data_files_most_recent/PBCS/PBCS_PSDC_Data_Loading_Template - study_personnel.tsv
+config/data_files_most_recent/PBCS/PBCS_PSDC_Data_Loading_Template - study_country.tsv
+config/data_files_most_recent/PBCS/PBCS_PSDC_Data_Loading_Template - participant.tsv
+config/data_files_most_recent/PBCS/PBCS_PSDC_Data_Loading_Template - data_collection using 0 (No) versus 1 (Yes).txt
+config/data_files_most_recent/PBCS/PBCS_PSDC_Data_Loading_Template - associated_link.tsv
+config/data_files_most_recent/PBCS/PBCS_PSCDC_Data_Loading_Template - publication.tsv
+config/data_files_most_recent/PBCS/PBCS_Data_Loading_Template - study_state_province_territory.tsv.txt
+config/data_files_most_recent/PBCS/PBCS_Data_Loading_Template - study.tsv.txt
+config/data_files_most_recent/NLST/NLST_participant_mock_data.tsv
+config/data_files_most_recent/NLST/NLST_Data_Loading_Template - study_state_province_territory.tsv
+config/data_files_most_recent/NLST/NLST_Data_Loading_Template - study_personnel.tsv
+config/data_files_most_recent/NLST/NLST_Data_Loading_Template - study_country.tsv
+config/data_files_most_recent/NLST/NLST_Data_Loading_Template - study.tsv
+config/data_files_most_recent/NLST/NLST_Data_Loading_Template - publication.tsv
+config/data_files_most_recent/NLST/NLST_Data_Loading_Template - associated_link.tsv
+config/data_files_most_recent/NLST/NLST_data_file.tsv
+config/data_files_most_recent/LILAC/PSDC_Data_Loading_Template - study_country.txt
+config/data_files_most_recent/LILAC/participant (3).tsv
+config/data_files_most_recent/LILAC/LILAC_Files.tsv
+config/data_files_most_recent/LILAC/LILAC_Data_Loading_Template - study_state_province_territory.txt
+config/data_files_most_recent/LILAC/LILAC_Data_Loading_Template - study_personnel.txt
+config/data_files_most_recent/LILAC/LILAC_Data_Loading_Template - study - enrollment period ending 2024.tsv.txt
+config/data_files_most_recent/LILAC/LILAC_Data_Loading_Template - publication.tsv.txt
+config/data_files_most_recent/LILAC/LILAC_Data_Loading_Template - data_collection using 0 (No) versus 1 (Yes).txt
+config/data_files_most_recent/LILAC/LILAC_Data_Loading_Template - associated_link.tsv.txt
+config/data_files_most_recent/HLBB_Mock_Data/participant HLBB.tsv
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-study_state_province_territory.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-study_personnel.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-study_country.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-study.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-publication.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-data_file.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-data_collection.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-associated_link.txt
+config/data_files_most_recent/HBCT_Mock_Data/participantHBCT.tsv
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-study_state_province_territory.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-study_personnel.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-study_country.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-study.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-publication.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-data_file.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-data_collection.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-associated_link.txt
+config/data_files_most_recent/GTSR_Mock_Data/participantGTSR.tsv
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-study_state_province_territory.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-study_personnel.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-study_country.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-study.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-publication.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-data_file.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-data_collection.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-associated_link.txt
+config/data_files_most_recent/BSCT_Mock_Data/participantBSCT.tsv
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-study_state_province_territory.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-study_personnel.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-study_country.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-study.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-publication.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-data_file.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-data_collection.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-associated_link.txt
+config/data_files_most_recent/BSBN_Mock_Data/participantBSBN.tsv
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-study_state_province_territory.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-study_personnel.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-study_country.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-study.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-publication.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-data_file.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-data_collection.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-associated_link.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-associated_link.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-data_collection.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-data_file.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-publication.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-study.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-study_country.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-study_personnel.txt
+config/data_files_most_recent/BSBN_Mock_Data/BSBN-study_state_province_territory.txt
+config/data_files_most_recent/BSBN_Mock_Data/participantBSBN.tsv
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-associated_link.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-data_collection.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-data_file.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-publication.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-study.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-study_country.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-study_personnel.txt
+config/data_files_most_recent/BSCT_Mock_Data/BSCT-study_state_province_territory.txt
+config/data_files_most_recent/BSCT_Mock_Data/participantBSCT.tsv
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-associated_link.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-data_collection.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-data_file.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-publication.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-study.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-study_country.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-study_personnel.txt
+config/data_files_most_recent/GTSR_Mock_Data/GTSR-study_state_province_territory.txt
+config/data_files_most_recent/GTSR_Mock_Data/participantGTSR.tsv
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-associated_link.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-data_collection.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-data_file.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-publication.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-study.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-study_country.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-study_personnel.txt
+config/data_files_most_recent/HBCT_Mock_Data/HBCT-study_state_province_territory.txt
+config/data_files_most_recent/HBCT_Mock_Data/participantHBCT.tsv
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-associated_link.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-data_collection.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-data_file.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-publication.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-study.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-study_country.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-study_personnel.txt
+config/data_files_most_recent/HLBB_Mock_Data/HLBB-study_state_province_territory.txt
+config/data_files_most_recent/HLBB_Mock_Data/participant HLBB.tsv
+config/data_files_most_recent/LILAC/LILAC_Data_Loading_Template - associated_link.tsv.txt
+config/data_files_most_recent/LILAC/LILAC_Data_Loading_Template - data_collection using 0 (No) versus 1 (Yes).txt
+config/data_files_most_recent/LILAC/LILAC_Data_Loading_Template - publication.tsv.txt
+config/data_files_most_recent/LILAC/LILAC_Data_Loading_Template - study - enrollment period ending 2024.tsv.txt
+config/data_files_most_recent/LILAC/LILAC_Data_Loading_Template - study_personnel.txt
+config/data_files_most_recent/LILAC/LILAC_Data_Loading_Template - study_state_province_territory.txt
+config/data_files_most_recent/LILAC/participant (3).tsv
+config/data_files_most_recent/LILAC/PSDC_Data_Loading_Template - study_country.txt
+config/data_files_most_recent/NLST/NLST_Data_Loading_Template - associated_link.tsv
+config/data_files_most_recent/NLST/NLST_Data_Loading_Template - publication.tsv
+config/data_files_most_recent/NLST/NLST_Data_Loading_Template - study.tsv
+config/data_files_most_recent/NLST/NLST_Data_Loading_Template - study_country.tsv
+config/data_files_most_recent/NLST/NLST_Data_Loading_Template - study_personnel.tsv
+config/data_files_most_recent/NLST/NLST_Data_Loading_Template - study_state_province_territory.tsv
+config/data_files_most_recent/NLST/NLST_participant_mock_data.tsv
+config/data_files_most_recent/PBCS/PBCS_Data_Loading_Template - study.tsv.txt
+config/data_files_most_recent/PBCS/PBCS_Data_Loading_Template - study_state_province_territory.tsv.txt
+config/data_files_most_recent/PBCS/PBCS_PSCDC_Data_Loading_Template - publication.tsv
+config/data_files_most_recent/PBCS/PBCS_PSDC_Data_Loading_Template - associated_link.tsv
+config/data_files_most_recent/PBCS/PBCS_PSDC_Data_Loading_Template - data_collection using 0 (No) versus 1 (Yes).txt
+config/data_files_most_recent/PBCS/PBCS_PSDC_Data_Loading_Template - participant.tsv
+config/data_files_most_recent/PBCS/PBCS_PSDC_Data_Loading_Template - study_country.tsv
+config/data_files_most_recent/PBCS/PBCS_PSDC_Data_Loading_Template - study_personnel.tsv
+config/data_files_most_recent/PLCO/participant_PLCO.tsv
+config/data_files_most_recent/PLCO/PLCO-data_collection v08-28-24 EM but using 0 (No) versus 1 (Yes) - typo fixed.txt
+config/data_files_most_recent/PLCO/PLCO_Data_Loading_Template - associated_link.tsv
+config/data_files_most_recent/PLCO/PLCO_Data_Loading_Template - publication.tsv
+config/data_files_most_recent/PLCO/PLCO_Data_Loading_Template - study.tsv
+config/data_files_most_recent/PLCO/PLCO_Data_Loading_Template - study_country.tsv
+config/data_files_most_recent/PLCO/PLCO_Data_Loading_Template - study_personnel.tsv
+config/data_files_most_recent/PLCO/PLCO_Data_Loading_Template - study_state_province_territory.tsv
+config/data_files_most_recent/PLTV_Mock_Data/participantPLTV.tsv
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-associated_link.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-data_collection.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-data_file.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-publication.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-study.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-study_country.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-study_personnel.txt
+config/data_files_most_recent/PLTV_Mock_Data/PLTV-study_state_province_territory.txt
+config/data_files_most_recent/SMCT_Mock_Data/participantSMCT.tsv
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-associated_link.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-data_collection.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-data_file.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-publication.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-study.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-study_country.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-study_personnel.txt
+config/data_files_most_recent/SMCT_Mock_Data/SMCT-study_state_province_territory.txt

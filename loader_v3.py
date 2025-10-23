@@ -19,7 +19,7 @@ from config import BentoConfig
 from data_loader_v4 import DataLoader   # udpated to use new version of data loader
 from bento.common.s3_v2 import S3Bucket
 
-# from participant_summary import create_summary_data
+from participant_summary import create_summary_data
 
 if LOG_PREFIX not in os.environ:
     os.environ[LOG_PREFIX] = 'Data_Loader'
@@ -310,7 +310,7 @@ def main():
                                           config.wipe_db, config.max_violations, split=config.split_transactions,
                                           no_backup=config.no_backup, neo4j_uri=config.neo4j_uri,
                                           backup_folder=config.backup_folder)
-                # create_summary_data(driver)
+                create_summary_data(driver)
             if driver:
                 driver.close()
             if restore_cmd:

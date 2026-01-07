@@ -282,7 +282,7 @@ class DataLoader:
             schema_df.reset_index(inplace=True)
             schema_df.rename(columns={"index": "file_type"}, inplace=True)
             schema_df = schema_df[~schema_df["file_type"].str.contains("_original")]  # this is not part of the model
-            schema_df = schema_df[~schema_df["file_type"].str.contains("_unit")]      # this is not part of the model
+        #    schema_df = schema_df[~schema_df["file_type"].str.contains("_unit")]      # this is not part of the model
             # remove fields that point back to this node (no child)
 
             id_fields = self.schema.props.id_fields
@@ -305,6 +305,7 @@ class DataLoader:
 
 #        if len(missing_from_schema) > 0:
 #            self.log.error(f"In {file_name} the following columns are in submission but not in schema: {missing_from_schema}")
+        missing_from_file = [i for i in missing_from_file if "_unit" not in i]
         if len(missing_from_file) > 0:
             self.log.error(f"In {file_name} the following columns are in the schema but missing from submission: {missing_from_file}")
         if len(missing_from_file) == 0 and len(missing_from_schema) == 0:
@@ -320,8 +321,8 @@ class DataLoader:
             index_files = []
             if "study" in self.file_dict:
                 study_names = list(self.file_dict["study"]["study_short_name"])
-            if "file" in self.file_dict:
-                index_files = list(set(self.file_dict["file"]["study.study_short_name"]))
+            if "data_file" in self.file_dict:
+                index_files = list(set(self.file_dict["data_file"]["study.study_short_name"]))
     
             study_names = list(set(study_names + index_files))
             
@@ -339,8 +340,10 @@ class DataLoader:
     def get_neo4j_version(self, tx):
         # Use the dbms.components() procedure to get server details
         result = tx.run("CALL dbms.components() YIELD name, versions, edition "
-                        "UNWIND versions AS version RETURN name, version, edition;")
-        return result.single()
+                        "UNWIND versions AS version RETURN name, version, edition; ")
+        data_list = [i for i in result.data()]
+        #return result.single()
+        return data_list[0]
 
     def create_data_dictionary(self, file_list):
         self.file_dict = {}
@@ -349,11 +352,12 @@ class DataLoader:
                 if txt[:2] == "s3":  # files get loaded directly from S3
                     file_data = pd.read_csv(txt, sep='\t', header=0, encoding='windows-1252', storage_options={"profile": 'Popsci_Dev'})
                 if txt[-3:] == "csv":
-                    file_data = pd.read_csv(txt, encoding='windows-1252')
-                else:  # files are loaded from local
-                    file_data = pd.read_csv(txt, sep='\t', header=0, encoding='windows-1252')
+                    file_data = pd.read_csv(txt, encoding='windows-1252', keep_default_na=False)
+                else:  # files are loaded from localf
+                    file_data = pd.read_csv(txt, sep='\t', header=0, encoding='windows-1252', keep_default_na=False)
             except Exception as e:
                 print(e)
+                print(f"{txt} is empty")
 
             file_data.columns = [i.strip() for i in file_data.columns]
             try:
@@ -366,10 +370,10 @@ class DataLoader:
             #    race_list = file_data[check_race[0]].tolist()
             #    file_data["number_of_races"] = [0 if i in ['Not allowed to collect', 'Not Reported']
             #                                    else len(i.split("|")) for i in race_list]
-            if "study_type" in file_data.columns:  # was part of mock data but no longer exists in the model
-                file_data.drop("study_type", axis=1, inplace=True)
-            if "number_of_participants" in file_data.columns:  # was part of mock data but no longer exists in the model
-                file_data.drop("number_of_participants", axis=1, inplace=True)
+#            if "study_type" in file_data.columns:  # was part of mock data but no longer exists in the model
+#                file_data.drop("study_type", axis=1, inplace=True)
+#            if "number_of_participants" in file_data.columns:  # was part of mock data but no longer exists in the model
+#                file_data.drop("number_of_participants", axis=1, inplace=True)
 
 
             try:
@@ -813,22 +817,26 @@ class DataLoader:
 
                 
             #    need_to_check = False   # type is not in the model but is part of the submitted files
-            #elif len(curr_field.split('.')) > 1:
-            #    need_to_check = False  # this is a relationship column, value depends on another file
+            elif len(curr_field.split('.')) > 1:
+                need_to_check = False  # this is a relationship column, value depends on another file
            
             if need_to_check:
                 valid_list = []
-                if curr_field == "cancer_diagnosis_primary_site":
-                    valid_list = list(self.schema.location_codes["ICD-O-3 Code"])
-                elif curr_field == "cancer_diagnosis_disease_morphology":
-                    valid_list = list(self.schema.histology_codes["ICD-O-3 Code"])
-                elif "enum" in properties[curr_field]:
-                    valid_list = properties[curr_field]["enum"]
-                elif "item_type" in properties[curr_field]:
-                    if "enum" in properties[curr_field]["item_type"]:
-                        valid_list = properties[curr_field]["item_type"]["enum"]
-                    else:
-                        print("item type no enum")
+                try:
+                    if curr_field == "cancer_diagnosis_primary_site":
+                        valid_list = list(self.schema.location_codes["ICD-O-3 Code"])
+                    elif curr_field == "cancer_diagnosis_disease_morphology":
+                        valid_list = list(self.schema.histology_codes["ICD-O-3 Code"])
+                    elif "enum" in properties[curr_field]:
+                        valid_list = properties[curr_field]["enum"]
+                    elif "item_type" in properties[curr_field]:
+                        if "enum" in properties[curr_field]["item_type"]:
+                            valid_list = properties[curr_field]["item_type"]["enum"]
+                        else:
+                            print("item type no enum")
+                except Exception as e:
+                    print(e)
+
                 if "minimum" in properties[curr_field]:
                     min_val = float(properties[curr_field]["minimum"])
                     max_val = float(properties[curr_field]["maximum"])
@@ -1022,8 +1030,11 @@ class DataLoader:
 
     def write_nodes_to_db(self, session, col_name, node_type, current_nodes, create_type):
 
+        current_nodes.columns = [i if len(i.split('.')) == 1 else i.split('.')[1] for i in current_nodes.columns]
+        col_list = current_nodes.columns
         file_data, qry_str, total_records = self.convert_df_to_dict(current_nodes)
-        rem_list = ['Node_Exists', 'Node_ID', 'Primary_Key_Value']
+        rem_list = ['Node_Exists', 'Node_ID', 'Primary_Key_Value'] + [i for i in col_list if "Unnamed" in i]
+        col_list = [i for i in col_list if "Unnamed" not in i]
 
         index = 0
         for curr_row in file_data:
@@ -1281,7 +1292,13 @@ class DataLoader:
                     #if node_type == "study" and MASTER_NODE:
                     #    self.schema.relationships["study"] = {'master_node': {'relationship_type': 'belongs_to', 'Mul': 'many_to_one'}}
                     
-                    relation = self.schema.relationships[node_type][curr_relationship.split('.')[0]]['relationship_type']
+                    try:
+                        relation = self.schema.relationships[node_type][curr_relationship.split('.')[0]]['relationship_type']
+                    except Exception as e:
+                        print(e)
+                        
+                    print(f"parent_node: {curr_relationship.split('.')[0]} is being mapped to  child_node: {node_type}")
+                    
                     qry_str = "  "
                     qry_str += f"MATCH (m:{curr_relationship.split('.')[0]}) "
                     qry_str += f"MATCH (n:{node_type}) "

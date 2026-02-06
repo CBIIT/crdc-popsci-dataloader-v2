@@ -878,6 +878,8 @@ class DataLoader:
                         violations += 1
                 if len(no_cancer) > 0 and curr_field in self.cancer_fields:
                     error_data = no_cancer[no_cancer[curr_field] != 'nan']
+                    error_data = error_data[error_data[curr_field] != '']
+                
                     if len(error_data) > 0:
                         self.log.error(f"In {curr_field}: participant is listed as participant_case_indicator == 'No' " +
                                        ", but a value was found (expected blank)")

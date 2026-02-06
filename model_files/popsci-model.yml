@@ -203,7 +203,7 @@ Nodes:
       #- state_province_territory_of_residence
       - ncbi_taxonomy_id # per DSS for CTDC, CDE ID = 10543100
       #- participant_ncbi_taxonomy_name # per DSS for CTDC, CDE ID = 10543082
-  data_file:
+  file:
     Desc: Within the PSDC, data files can currently be associated only with study records. Notably, data files are not themselves stored within the application. Instead, the application stores records as to the existence and nature of such data files. The Data File node is comprised of properties which characterize these files in terms of their size, format and content, such that they can be appropriately represented within the application's UI, and in terms of their storage location, such that they can be retrieved for analysis.
     Tags:
       Category: data_file
@@ -224,9 +224,11 @@ Nodes:
       #- data_file_signed_url # to be used ONLY in support of the MVP-style direct file download, and to be removed outright post-MVP
       - data_file_access_control
 Relationships:
-  #belongs_to:
-  #  Mul: many_to_one
-  #  Ends:
+  # belongs_to:
+  #   Mul: many_to_one
+  #   Ends:
+      # - Src: study
+      #   Dst: project
       # - Src: study # so can a lowest-level study belong directly to a highest-level program?
       #   Dst: program
       #- Src: project # this relationship can be removed because project is above study?
@@ -237,7 +239,7 @@ Relationships:
   associated_with: # group all file relationships in here?
     Mul: many_to_one
     Ends:
-      - Src: data_file
+      - Src: file
         Dst: study
       # - Src: data_file
       #   Dst: project

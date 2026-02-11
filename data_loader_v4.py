@@ -167,6 +167,7 @@ class DataLoader:
         self.update_dict_timer = 0
         self.relationship_passed = 0
         self.load_relation_time = 0
+        self.extra_cols = []
         self.cancer_fields = ["cancer_diagnosis_primary_site",
                               "cancer_diagnosis_disease_morphology",
                               "age_at_first_cancer_diagnosis"]
@@ -310,7 +311,12 @@ class DataLoader:
             self.log.error(f"In {file_name} the following columns are in the schema but missing from submission: {missing_from_file}")
         if len(missing_from_file) == 0 and len(missing_from_schema) == 0:
             return True
-        return False
+        if len(missing_from_schema) > 0:
+             self.log.warning(f"In {file_name} the following columns are in the file but missing from the schema: {missing_from_schema}")
+             self.extra_cols = self.extra_cols + missing_from_schema
+        if len(missing_from_file) > 0:
+            return False
+        return True
 
     def validate_file_dict(self, cheat_mode, max_violations):
         if not cheat_mode:
@@ -815,6 +821,8 @@ class DataLoader:
                 if "@relation" in properties[curr_field]["Type"]:
                     need_to_check = False  # this is a relation variable and not validated here
 
+            elif curr_field in self.extra_cols:
+                need_to_check = False
                 
             #    need_to_check = False   # type is not in the model but is part of the submitted files
             elif len(curr_field.split('.')) > 1:

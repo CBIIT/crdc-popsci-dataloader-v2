@@ -1,25 +1,39 @@
 import yaml
 import pandas as pd
+import requests
 
 
 def get_cancer_translations_list(yml_file):
+
     with open(yml_file) as f:
         cancer_term_file = yaml.load(f, Loader=yaml.FullLoader)
 
     all_terms = pd.DataFrame()
     for curr_key in cancer_term_file.keys():
         for curr_location in cancer_term_file[curr_key]:
-            x = pd.DataFrame.from_dict(cancer_term_file[curr_key][curr_location])  # , orient='index')
-            x["ICD-O-3 Code"] = curr_location
-            x.reset_index(inplace=True)
+            try:
+                x = pd.DataFrame.from_dict(cancer_term_file[curr_key][curr_location])  # , orient='index')
+                x["ICD-O-3 Code"] = curr_location
+                x.reset_index(inplace=True)
 
-            all_terms = pd.concat([all_terms, x])
+                all_terms = pd.concat([all_terms, x])
+            except Exception as e:
+                print(e)
 
     # all_terms.columns = ["Sub Site", "ICD-O-3 Code", "Primary Site"]
     return all_terms
 
 
 def get_cancer_translations(yml_file):
+   # property_value_code = '13606049'
+   # URL = f'https://cadsrapi.cancer.gov/rad/NCIAPI/1.0/api/DataElements?publicId=13606049'
+   # headers = {'Accept': 'application/json'}
+   # response = requests.get(URL, headers=headers)
+   # data = response.json()
+   # values = data["DataElements"][0]["ValueDomain"]["PermissibleValues"]
+   # allowed_values = [i["value"] for i in values]
+   # sub_longname = [i["ValueMeaning"]["longName"] for i in values]
+    
     with open(yml_file) as f:
         cancer_term_file = yaml.load(f, Loader=yaml.FullLoader)
 

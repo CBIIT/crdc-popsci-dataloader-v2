@@ -16,8 +16,8 @@ from bento.common.utils import get_host, DATETIME_FORMAT, reformat_date
 
 from neo4j import Driver
 import pandas as pd
-import numpy as np
 from datetime import date
+import numpy as np
 
 from cancer_translation_func import get_cancer_translations, get_cancer_translations_list, convert_codes
 

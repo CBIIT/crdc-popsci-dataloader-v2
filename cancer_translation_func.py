@@ -49,7 +49,12 @@ def get_cancer_translations(yml_file):
 
 
 def convert_codes(df, column_name, code_list):
+    org_cols = df.columns
     if column_name in df.columns:
+        org_cols = org_cols.drop(column_name)
+        df[column_name] = [i.split("|") for i in df[column_name]]
+        df = df.explode(column_name)
+        
         df = df.merge(code_list, left_on=column_name, right_on="ICD-O-3 Code", how="left")
 
         df.drop(column_name, axis=1, inplace=True)
@@ -66,4 +71,10 @@ def convert_codes(df, column_name, code_list):
         df.loc[x.index, "NCIt Preferred Term"] = "Not Applicable"
         df.loc[x.index, "cancer_diagnosis_primary_site"] = "Not Applicable"
         df.loc[x.index, "cancer_diagnosis_disease_morphology"] = "Not Applicable"
+        
+        cols_to_agg = [i for i in df.columns if i not in org_cols]
+        agg_dict = {i : lambda x: ','.join(x) for i in cols_to_agg}
+        df = df.groupby(list(org_cols)).agg(agg_dict)
+        df.reset_index(inplace=True)
+
     return df

@@ -991,6 +991,7 @@ class DataLoader:
         return file_data, qry_str, total_records
 
     def process_data_in_batches(self, tx, data, create_type, node_type):
+        primary_key = self.node_keys_dict[node_type]["Primary ID"]
         new_qry = """CALL apoc.periodic.iterate( """
         new_qry += """\"UNWIND $data AS item return item\", """  # Iterate statement: Unwinds the list of data items
 
@@ -998,7 +999,7 @@ class DataLoader:
             new_qry += """\"CREATE (n:MyNode) SET n = item, n.created = datetime() return n \", """  # Action statement: Creates a node for each item
         elif create_type == 'MATCH':  # add filtering criteria to node
             new_qry += """ \"Match(n:MyNode) where """ + f"{ID_FUNC}(n) " + """ = item.Node_ID and n.Primary_Key_Value = item.Primary_Key_Value """
-            new_qry += """  SET n.updated = datetime()  return n \", """
+            new_qry += """  SET n = item, n.updated = datetime()  return n \", """
 
         new_qry += """{batchSize: 10000, retries: 1, """   # Process 1000 items per batch
         new_qry += """parallel: true, """    # Run batches sequentially
@@ -1010,7 +1011,7 @@ class DataLoader:
         # remove user created variables, do not need to be loaded into db
         new_qry = new_qry.replace("n.Node_Exists = item.Node_Exists", "")
         new_qry = new_qry.replace("n.Node_ID = item.Node_ID", "")
-        # new_qry = new_qry.replace("n.Primary_Key_Value = item.Primary_Key_Value","")
+        new_qry = new_qry.replace("n.Primary_Key_Value",f"n.{primary_key}")
 
         result = tx.run(new_qry, data=data)
         data_list = [i for i in result.data()]
@@ -1043,7 +1044,9 @@ class DataLoader:
         current_nodes.columns = [i if len(i.split('.')) == 1 else i.split('.')[1] for i in current_nodes.columns]
         col_list = current_nodes.columns
         file_data, qry_str, total_records = self.convert_df_to_dict(current_nodes)
-        rem_list = ['Node_Exists', 'Node_ID', 'Primary_Key_Value'] + [i for i in col_list if "Unnamed" in i]
+        #rem_list = ['Node_Exists', 'Node_ID', 'Primary_Key_Value'] + [i for i in col_list if "Unnamed" in i]
+        rem_list = ['Node_Exists'] + [i for i in col_list if "Unnamed" in i]
+        
         col_list = [i for i in col_list if "Unnamed" not in i]
 
         index = 0

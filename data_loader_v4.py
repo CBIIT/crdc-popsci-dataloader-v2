@@ -1044,8 +1044,8 @@ class DataLoader:
         current_nodes.columns = [i if len(i.split('.')) == 1 else i.split('.')[1] for i in current_nodes.columns]
         col_list = current_nodes.columns
         file_data, qry_str, total_records = self.convert_df_to_dict(current_nodes)
-        #rem_list = ['Node_Exists', 'Node_ID', 'Primary_Key_Value'] + [i for i in col_list if "Unnamed" in i]
-        rem_list = ['Node_Exists'] + [i for i in col_list if "Unnamed" in i]
+        rem_list = ['Node_Exists', 'Node_ID', 'Primary_Key_Value'] + [i for i in col_list if "Unnamed" in i]
+        #rem_list = ['Node_Exists'] + [i for i in col_list if "Unnamed" in i]
         
         col_list = [i for i in col_list if "Unnamed" not in i]
 

@@ -887,6 +887,7 @@ class DataLoader:
                 if len(no_cancer) > 0 and curr_field in self.cancer_fields:
                     error_data = no_cancer[no_cancer[curr_field] != 'nan']
                     error_data = error_data[error_data[curr_field] != '']
+                    error_data = error_data[error_data[curr_field] != 'Not Reported']
                 
                     if len(error_data) > 0:
                         self.log.error(f"In {curr_field}: participant is listed as participant_case_indicator == 'No' " +

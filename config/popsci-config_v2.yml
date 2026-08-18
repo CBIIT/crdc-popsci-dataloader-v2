@@ -57,7 +57,8 @@ Config:
   # Loading mode, can be UPSERT_MODE, NEW_MODE or DELETE_MODE, default is UPSERT_MODE, can be overridden by -m/--mode argument
   loading_mode: UPSERT_MODE
   # Location of dataset, can be overridden by --dataset argument
-  dataset: 'C:\Users\breadsp2\Downloads\NLST Data Loading Files'
+  #dataset: 'C:\Users\breadsp2\Downloads\NLST Data Loading Files'
+  dataset: 'C:\Users\breadsp2\Downloads\PLCO Data Loading Files'
 
   # name of the database being written to, defautls to neo4j
   database_name: 'neo4j'

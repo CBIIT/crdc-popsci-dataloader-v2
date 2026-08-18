@@ -1397,3 +1397,49 @@ CancerSiteLocation:
   - NCIt Concept Code: C12727
     NCIt Preferred Term: Heart
     UBERON Preferred Term: heart
+
+
+  UBERON:0003837:
+  - NCIt Concept Code: Unknown
+    NCIt Preferred Term: Connective Tissue of Thorax
+    UBERON Preferred Term: connective tissue of thorax
+  UBERON:0004054:
+  - NCIt Concept Code: Unknown
+    NCIt Preferred Term: Internal Male Genitalia
+    UBERON Preferred Term: internal male genitalia
+  UBERON:0012652:
+  - NCIt Concept Code: Unknown
+    NCIt Preferred Term: Colorectum
+    UBERON Preferred Term: colorectum
+  UBERON:0001007:
+  - NCIt Concept Code: Unknown
+    NCIt Preferred Term: Digestive System
+    UBERON Preferred Term: digestive system
+  UBERON:0005056:
+  - NCIt Concept Code: Unknown
+    NCIt Preferred Term: External Female Genitalia
+    UBERON Preferred Term: external female genitalia
+  UBERON:0000916:
+  - NCIt Concept Code: Unknown
+    NCIt Preferred Term: Abdomen
+    UBERON Preferred Term: abdomen
+  UBERON:0003975:
+  - NCIt Concept Code: Unknown
+    NCIt Preferred Term: Internal Female Genitalia
+    UBERON Preferred Term: internal female genitalia
+  UBERON:0003135:
+  - NCIt Concept Code: Unknown
+    NCIt Preferred Term: Male Reproductive Organ
+    UBERON Preferred Term: male reproductive organ
+  UBERON:0000990:
+  - NCIt Concept Code: Unknown
+    NCIt Preferred Term: Reproductive System
+    UBERON Preferred Term: reproductive system
+  UBERON:0004053:
+  - NCIt Concept Code: Unknown
+    NCIt Preferred Term: External Male Genitalia
+    UBERON Preferred Term: external male genitalia
+  UBERON:0001003:
+  - NCIt Concept Code: Unknown
+    NCIt Preferred Term: Skin Epidermis
+    UBERON Preferred Term: skin epidermis

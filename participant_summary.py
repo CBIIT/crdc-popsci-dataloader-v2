@@ -43,10 +43,11 @@ def get_study_summary(tx):
     neo4j_query += "UNWIND participants AS p "
     neo4j_query += "UNWIND coalesce(p.cancer_diagnosis_primary_site, []) AS primary_site_raw "
     neo4j_query += "UNWIND split(toLower(primary_site_raw), ' ^ ') AS primary_site_value "
-    neo4j_query += "WITH s, number_of_participants, trim(primary_site_value) AS primary_site_value "
+    neo4j_query += "WITH s, p, number_of_participants, trim(primary_site_value) AS primary_site_value "
     neo4j_query += "WHERE primary_site_value <> '' "
     neo4j_query += "RETURN s.study_short_name AS study_short_name, "
     neo4j_query += "number_of_participants, "
+    neo4j_query += "collect(DISTINCT p.cancer_diagnosis_disease_morphology) AS cancer_diagnosis_disease_morphology_list, "
     neo4j_query += "collect(DISTINCT primary_site_value) AS cancer_diagnosis_primary_site_list, "
     neo4j_query += "count(DISTINCT primary_site_value) AS cancer_diagnosis_primary_site_count"
     result = tx.run(neo4j_query)

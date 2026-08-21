@@ -303,6 +303,7 @@ def main():
                 driver.close()
             if restore_cmd:
                 log.info(restore_cmd)
+            print("this is the load_result :", load_result)
             if load_result is False:
                 log.error('Data files upload failed')
                 sys.exit(1)

@@ -315,6 +315,7 @@ class DataLoader:
              self.log.warning(f"In {file_name} the following columns are in the file but missing from the schema: {missing_from_schema}")
              self.extra_cols = self.extra_cols + missing_from_schema
         if len(missing_from_file) > 0:
+            print(f"Inthe following columns are in the schema but missing from the file: {missing_from_file}")
             return False
         return True
 
@@ -887,7 +888,7 @@ class DataLoader:
                 if len(no_cancer) > 0 and curr_field in self.cancer_fields:
                     error_data = no_cancer[no_cancer[curr_field] != 'nan']
                     error_data = error_data[error_data[curr_field] != '']
-                    error_data = error_data[error_data[curr_field] != 'Not Reported']
+                    error_data = error_data[error_data[curr_field] != 'Not Applicable']
                 
                     if len(error_data) > 0:
                         self.log.error(f"In {curr_field}: participant is listed as participant_case_indicator == 'No' " +
@@ -895,7 +896,9 @@ class DataLoader:
                         violations += 1
 
         if violations == 0:
+            print("All validations passed for file")
             return True
+        print("All validations failed for file")
         return False
 
     def get_new_statement(self, node_type, obj):

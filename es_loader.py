@@ -22,7 +22,7 @@ class ESLoader:
     def __init__(self, es_host, neo4j_driver):
         self.neo4j_driver = neo4j_driver
         timeout_seconds = 60
-        if 'amazonaws.com' in es_host:
+        if 'amazonaws.com' not in es_host:
             awsauth = AWS4Auth(
                 refreshable_credentials=Session().get_credentials(),
                 region='us-east-1',
